@@ -200,6 +200,14 @@ enum FlightMath {
             phase = .boarding
         }
 
+        // A flight added after the fact, or one nothing tracked, never leaves "scheduled". Hours past its
+        // arrival time, it's over.
+        if phase == .scheduled || phase == .boarding,
+           let end = state.arrival.best ?? state.departure.best.map({ $0.addingTimeInterval(12 * 3600) }),
+           now > end.addingTimeInterval(2 * 3600) {
+            phase = .arrived
+        }
+
         // Never step backwards (e.g. a stale schedule saying "boarding" after takeoff).
         if rank(phase) < rank(previous.phase), previous.phase != .cancelled, previous.phase != .diverted {
             phase = previous.phase

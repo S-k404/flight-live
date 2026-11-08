@@ -250,7 +250,8 @@ struct PassportView: View {
             var built: [TrackedFlight] = []
             var missing = 0
             for record in records {
-                if let flight = await PastFlightImport.flight(from: record, knownAirports: known, credentials: settings.credentials) {
+                if let flight = await PastFlightImport.flight(from: record, knownAirports: known, credentials: settings.credentials,
+                                                              lookUpDetails: records.count <= 5) {
                     built.append(flight)
                 } else {
                     missing += 1
@@ -261,6 +262,9 @@ struct PassportView: View {
             var parts = ["Added \(added) flight\(added == 1 ? "" : "s")."]
             if already > 0 { parts.append("\(already) \(already == 1 ? "was" : "were") already here.") }
             if missing > 0 { parts.append("Couldn't find the airports for \(missing).") }
+            if records.count > 5, settings.credentials != nil, !store.pastFlightsMissingPlanes.isEmpty {
+                parts.append("Tap “Find the planes and times” to fill in the aircraft.")
+            }
             importMessage = parts.joined(separator: " ")
             importing = false
         }
@@ -586,6 +590,7 @@ private struct HistorySection: View {
     var flights: [TrackedFlight]
     @Binding var sort: HistorySort
     var units: UnitSystem
+    @State private var editingFlight: TrackedFlight?
 
     private var sorted: [TrackedFlight] {
         let byDate = flights.sorted { $0.sortDate > $1.sortDate }
@@ -648,11 +653,21 @@ private struct HistorySection: View {
                         HistoryRow(flight: flight, showsDistance: sort == .distance, units: units)
                     }
                     .buttonStyle(.plain)
+                    .contextMenu {
+                        Button {
+                            editingFlight = flight
+                        } label: {
+                            Label("Edit Details", systemImage: "pencil")
+                        }
+                    }
                     Divider().overlay(Color.white.opacity(0.1)).padding(.leading, 56)
                 }
             }
         }
         .foregroundStyle(.white)
+        .sheet(item: $editingFlight) { flight in
+            EditFlightDetailsView(flight: flight)
+        }
     }
 }
 

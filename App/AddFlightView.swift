@@ -24,6 +24,8 @@ struct AddFlightView: View {
     @State private var importMessage: String?
     /// Set when the results are a route's flights: "BLR → RPR".
     @State private var routeTitle: String?
+    /// Set when the result is a past flight with no schedule record, added on its usual route.
+    @State private var pastNote: String?
     @AppStorage("recentSearches") private var recentSearchesStorage = ""
     @FocusState private var fieldFocused: Bool
 
@@ -116,18 +118,19 @@ struct AddFlightView: View {
                             }
                         }
                     }
-                    if settings.credentials != nil {
-                        Picker("Day", selection: $day) {
-                            ForEach(SearchDay.allCases) { Text($0.rawValue).tag($0) }
-                        }
-                        .pickerStyle(.segmented)
-                        if day == .other {
-                            DatePicker("Date", selection: $otherDate, displayedComponents: .date)
-                        }
+                    // Without a schedule key only days that have passed make sense: a flight you already took.
+                    let hasKey = settings.credentials != nil
+                    Picker("Day", selection: $day) {
+                        ForEach(SearchDay.allCases.filter { hasKey || $0 != .tomorrow }) { Text($0.rawValue).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    if day == .other {
+                        DatePicker("Date", selection: $otherDate, in: Date.distantPast...(hasKey ? Date.distantFuture : Date()),
+                                   displayedComponents: .date)
                     }
                 } footer: {
                     if settings.credentials == nil {
-                        Text("Without a schedule key, FlightLive can only find planes that are in the air right now. Add a free AeroDataBox key in Settings to add future flights and get gates, delays and baggage belts.")
+                        Text("Without a schedule key, FlightLive can find planes that are in the air right now, or add a flight you already took on its usual route. Add a free AeroDataBox key in Settings to add future flights and get gates, delays and baggage belts.")
                     }
                 }
 
@@ -151,8 +154,7 @@ struct AddFlightView: View {
                 }
 
                 if !results.isEmpty {
-                    Section(routeTitle.map { "\(results.count) flight\(results.count == 1 ? "" : "s") · \($0)" }
-                            ?? (results.count == 1 ? "Found it" : "Pick your flight")) {
+                    Section {
                         ForEach(results) { candidate in
                             Button {
                                 add(candidate)
@@ -161,6 +163,11 @@ struct AddFlightView: View {
                             }
                             .buttonStyle(.plain)
                         }
+                    } header: {
+                        Text(routeTitle.map { "\(results.count) flight\(results.count == 1 ? "" : "s") · \($0)" }
+                             ?? (results.count == 1 ? "Found it" : "Pick your flight"))
+                    } footer: {
+                        if let pastNote { Text(pastNote) }
                     }
                 }
 
@@ -312,6 +319,7 @@ struct AddFlightView: View {
         errorMessage = nil
         results = []
         routeTitle = nil
+        pastNote = nil
         let query = trimmedQuery
         let date = selectedDate
         let credentials = settings.credentials
@@ -328,7 +336,14 @@ struct AddFlightView: View {
                     results = found
                     remember("\(route.from) to \(route.to)")
                 } else {
-                    results = try await FlightLookup.search(query, date: date, credentials: credentials)
+                    do {
+                        results = try await FlightLookup.search(query, date: date, credentials: credentials)
+                    } catch let notFound as FlightLookup.NotFound where date < Calendar.current.startOfDay(for: .now) {
+                        // A day that has passed with no schedule record: add it as a flight you took, on its usual route.
+                        guard let past = await FlightLookup.pastCandidate(query, date: date, knownAirports: knownAirports) else { throw notFound }
+                        results = [past]
+                        pastNote = "No schedule record for that day, so this is the flight's usual route. The time is a placeholder; change it in Edit details."
+                    }
                     remember(query)
                 }
             } catch {

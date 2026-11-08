@@ -113,18 +113,18 @@ enum PastFlightImport {
     /// Turns a record into a finished flight, finding its airline and airports. Nil if the airports can't be found.
     @MainActor
     static func flight(from record: PastFlightRecord, knownAirports: [FlightActivityAttributes.Airport],
-                       credentials: ScheduleCredentials?) async -> TrackedFlight? {
+                       credentials: ScheduleCredentials?, lookUpDetails: Bool = true) async -> TrackedFlight? {
         // "IGO978" → airline IGO, number 978. Three letters is an ICAO code; otherwise the first two characters.
         let compact = record.flightNumber
         let prefixLength = compact.prefix(3).allSatisfy(\.isLetter) && compact.count > 3 ? 3 : 2
         let airlineCode = String(compact.prefix(prefixLength))
         let digits = String(compact.dropFirst(prefixLength))
-        let airline = await AirportDirectory.airline(airlineCode)
+        async let airlineLookup = AirportDirectory.airline(airlineCode)
 
         var known = knownAirports
         var usualRoute: (origin: FlightActivityAttributes.Airport, destination: FlightActivityAttributes.Airport)?
         let needsRoute = [record.from, record.to].contains { code in
-            code.map { code in !known.contains { $0.code == code } } ?? true
+            code.map { code in !known.contains { $0.code == code } && AirportDirectory.cached(code) == nil } ?? true
         }
         if needsRoute, let route = try? await FlightAPI.route(callsign: compact) {
             let origin = route.origin.attribute, destination = route.destination.attribute
@@ -135,10 +135,11 @@ enum PastFlightImport {
             }
         }
         guard let fromCode = record.from ?? usualRoute?.origin.code,
-              let toCode = record.to ?? usualRoute?.destination.code,
-              let origin = await AirportDirectory.airport(fromCode, known: known, credentials: credentials),
-              let destination = await AirportDirectory.airport(toCode, known: known, credentials: credentials)
-        else { return nil }
+              let toCode = record.to ?? usualRoute?.destination.code else { return nil }
+        async let originLookup = AirportDirectory.airport(fromCode, known: known, credentials: credentials)
+        async let destinationLookup = AirportDirectory.airport(toCode, known: known, credentials: credentials)
+        guard let origin = await originLookup, let destination = await destinationLookup else { return nil }
+        let airline = await airlineLookup
 
         var state = FlightActivityAttributes.ContentState(phase: record.cancelled ? .cancelled : .arrived, updatedAt: .now)
         state.departure.scheduled = record.departureScheduled?.date(in: origin.timeZone)
@@ -168,7 +169,8 @@ enum PastFlightImport {
         var flight = TrackedFlight(attributes: attributes, state: state)
         flight.seat = record.seat
         flight.addedAt = state.departure.best ?? .now
-        if let credentials, record.aircraft == nil, !record.cancelled {
+        // One AeroDataBox request each: for a big import that's left to the Passport's button, which spreads them out.
+        if lookUpDetails, let credentials, record.aircraft == nil, !record.cancelled {
             do {
                 flight = try await withScheduleDetails(flight, credentials: credentials) ?? flight
                 flight.pastDetailsChecked = true
@@ -240,12 +242,33 @@ enum AirportDirectory {
         guard let data = UserDefaults.standard.data(forKey: cacheKey) else { return [:] }
         return (try? JSONDecoder().decode([String: FlightActivityAttributes.Airport].self, from: data)) ?? [:]
     }()
-    private static var airlines: [String: FlightAPI.AirlineInfo?] = [:]
+    private static let airlineCacheKey = "airlineDirectory"
+    private static var airlines: [String: FlightAPI.AirlineInfo] = {
+        guard let data = UserDefaults.standard.data(forKey: airlineCacheKey) else { return [:] }
+        return (try? JSONDecoder().decode([String: FlightAPI.AirlineInfo].self, from: data)) ?? [:]
+    }()
+    /// Asked about and not known, so it isn't asked again until the app is reopened.
+    private static var unknownAirlines: Set<String> = []
+
+    /// An airport already looked up on this phone, with its time zone.
+    static func cached(_ code: String) -> FlightActivityAttributes.Airport? { airports[code] }
 
     static func airline(_ code: String) async -> FlightAPI.AirlineInfo? {
         if let cached = airlines[code] { return cached }
-        let info = try? await FlightAPI.airline(code: code)
+        if unknownAirlines.contains(code) { return nil }
+        // A failed request says nothing about the airline, so only a real "unknown" is remembered.
+        let info: FlightAPI.AirlineInfo?
+        do {
+            info = try await FlightAPI.airline(code: code)
+        } catch {
+            return nil
+        }
+        guard let info else {
+            unknownAirlines.insert(code)
+            return nil
+        }
         airlines[code] = info
+        if let data = try? JSONEncoder().encode(airlines) { UserDefaults.standard.set(data, forKey: airlineCacheKey) }
         return info
     }
 

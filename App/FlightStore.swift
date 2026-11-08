@@ -170,6 +170,13 @@ final class FlightStore {
 
     @discardableResult
     func add(_ candidate: FlightCandidate) async -> UUID {
+        if candidate.isPast {
+            // Already flown: no tracking, notifications or Live Activity, like an imported flight.
+            var flight = TrackedFlight(attributes: candidate.attributes, state: candidate.state)
+            flight.addedAt = candidate.state.departure.best ?? .now
+            addPastFlights([flight])
+            return trackedFlight(matching: flight.attributes.flightNumber, departure: flight.state.departure.best)?.id ?? flight.id
+        }
         if let existing = trackedFlight(matching: candidate.attributes.flightNumber,
                                         departure: candidate.state.departure.best,
                                         schedule: candidate.schedule) {
@@ -340,7 +347,8 @@ final class FlightStore {
                 record.departureTerminal = entry.terminal
                 record.departureGate = entry.gate
                 record.seat = entry.seat
-                guard var flight = await PastFlightImport.flight(from: record, knownAirports: known, credentials: settings.credentials) else {
+                guard var flight = await PastFlightImport.flight(from: record, knownAirports: known, credentials: settings.credentials,
+                                                                 lookUpDetails: entries.count <= 5) else {
                     result.notFound += 1
                     continue
                 }
@@ -541,6 +549,15 @@ final class FlightStore {
             // Entered as estimates, so the app doesn't claim the flight is on time or delayed.
             edited.departure.estimated = departure
             edited.arrival.estimated = arrival
+            // A flown flight may carry the real gate times, which would win over what's entered here.
+            if previous.phase.isFinal {
+                if edited.departure.actual != nil { edited.departure.actual = departure }
+                if edited.arrival.actual != nil { edited.arrival.actual = arrival }
+            }
+            // Moved to a day that hasn't come yet: it isn't over after all.
+            if previous.phase == .arrived, !flight.memory.hasBeenAirborne, let departure, departure > .now {
+                edited.phase = .scheduled
+            }
         }
         let trimmedGate = gate.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
         edited.departure.gate = trimmedGate.isEmpty ? nil : trimmedGate
@@ -588,8 +605,18 @@ final class FlightStore {
     func refreshAll(force: Bool = false) async {
         // A forced refresh (pull to refresh, Siri) includes flights that just finished, for the baggage belt,
         // but never old ones: those would only burn network and schedule quota.
-        for flight in flights where !flight.state.phase.isFinal || (force && !flight.isPast()) {
-            await refresh(flight.id, forceSchedule: force)
+        // Together, a few at a time: position lookups don't wait on each other, and schedule requests are spaced
+        // out by the AeroDataBox pacer.
+        let due = flights.filter { !$0.state.phase.isFinal || (force && !$0.isPast()) }.map(\.id)
+        await withTaskGroup(of: Void.self) { group in
+            var remaining = due.makeIterator()
+            for _ in 0..<4 {
+                guard let id = remaining.next() else { break }
+                group.addTask { await self.refresh(id, forceSchedule: force) }
+            }
+            while await group.next() != nil {
+                if let id = remaining.next() { group.addTask { await self.refresh(id, forceSchedule: force) } }
+            }
         }
         await syncLiveActivities()
         await updateTravelTimes()

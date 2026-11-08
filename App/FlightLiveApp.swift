@@ -32,6 +32,39 @@ struct FlightLiveApp: App {
                         let result = await store.importText(arguments[index + 1])
                         print("importText:", result.message)
                     }
+                    // `-addPast "6E978 2026-11-07"` runs Add Flight's fallback for a flight on a day that has passed.
+                    if let index = arguments.firstIndex(of: "-addPast"), index + 1 < arguments.count {
+                        let parts = arguments[index + 1].split(separator: " ").map(String.init)
+                        let formatter = DateFormatter()
+                        formatter.locale = Locale(identifier: "en_US_POSIX")
+                        formatter.dateFormat = "yyyy-MM-dd"
+                        if parts.count == 2, let day = formatter.date(from: parts[1]) {
+                            let started = Date()
+                            if let candidate = await FlightLookup.pastCandidate(parts[0], date: day.addingTimeInterval(12 * 3600), knownAirports: []) {
+                                let id = await store.add(candidate)
+                                let flight = store.flight(id)
+                                print("addPast:", flight?.attributes.flightNumber ?? "-", flight?.attributes.origin?.code ?? "?", "to",
+                                      flight?.attributes.destination?.code ?? "?", flight?.state.phase.rawValue ?? "-",
+                                      flight?.state.departure.best.map { "\($0)" } ?? "-", "inPast:", store.past.contains { $0.id == id },
+                                      String(format: "%.2fs", Date().timeIntervalSince(started)))
+                            } else {
+                                print("addPast: no usual route known for", parts[0])
+                            }
+                        }
+                    }
+                    // `-checkPastPhase` checks that a flight long past its arrival moves on from "scheduled".
+                    if arguments.contains("-checkPastPhase") {
+                        func phase(departingInHours hours: Double) -> FlightPhase {
+                            var state = FlightActivityAttributes.ContentState(phase: .scheduled, updatedAt: .now)
+                            state.departure.scheduled = .now.addingTimeInterval(hours * 3600)
+                            state.arrival.scheduled = .now.addingTimeInterval((hours + 3) * 3600)
+                            var memory = TrackingMemory()
+                            return FlightMath.nextState(attributes: FlightActivityAttributes(flightNumber: "6E 978"), previous: state,
+                                                        schedule: nil, aircraft: nil, lookedForAircraft: false, memory: &memory).phase
+                        }
+                        print("checkPastPhase: yesterday", phase(departingInHours: -26).rawValue, "| 1h ago", phase(departingInHours: -1).rawValue,
+                              "| 4h ago", phase(departingInHours: -4).rawValue, "| tomorrow", phase(departingInHours: 20).rawValue)
+                    }
                     // `-importCSV <file in Documents>` runs the Flighty import without the file picker.
                     if let index = arguments.firstIndex(of: "-importCSV"), index + 1 < arguments.count,
                        let folder = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first,

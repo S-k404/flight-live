@@ -68,17 +68,19 @@ struct EditFlightDetailsView: View {
                     }
                 }
 
-                Section {
-                    Picker("Boarding starts", selection: $boardingMinutes) {
-                        ForEach(Self.boardingChoices, id: \.self) { minutes in
-                            Text("\(minutes) min before").tag(minutes)
+                if !flight.state.phase.isFinal {
+                    Section {
+                        Picker("Boarding starts", selection: $boardingMinutes) {
+                            ForEach(Self.boardingChoices, id: \.self) { minutes in
+                                Text("\(minutes) min before").tag(minutes)
+                            }
                         }
+                        LabeledContent("Boarding at", value: FlightPresentation.time(boardingTime, originZone))
+                    } header: {
+                        Text("Boarding")
+                    } footer: {
+                        Text("You'll get a notification when boarding starts, even if FlightLive is closed. Most airlines board 30–45 minutes before departure; your boarding pass shows the exact time.")
                     }
-                    LabeledContent("Boarding at", value: FlightPresentation.time(boardingTime, originZone))
-                } header: {
-                    Text("Boarding")
-                } footer: {
-                    Text("You'll get a notification when boarding starts, even if FlightLive is closed. Most airlines board 30–45 minutes before departure; your boarding pass shows the exact time.")
                 }
 
                 if canEditTimes {

@@ -290,6 +290,21 @@ struct KeyCheckResult {
     var message: String
 }
 
+/// Spaces AeroDataBox requests a little over a second apart, however many flights are refreshing at once, so the free
+/// plan's one-a-second limit isn't hit and time isn't lost in retries.
+private actor ScheduleRequestPacer {
+    private var nextSlot = Date.distantPast
+
+    func waitForSlot() async {
+        let slot = max(nextSlot, Date())
+        nextSlot = slot.addingTimeInterval(1.1)
+        let delay = slot.timeIntervalSinceNow
+        if delay > 0 { try? await Task.sleep(for: .seconds(delay)) }
+    }
+}
+
+private let scheduleRequestPacer = ScheduleRequestPacer()
+
 enum AeroDataBox {
     /// Tests a key with AeroDataBox's free status endpoint, which doesn't use any of the monthly quota.
     static func checkKey(_ credentials: ScheduleCredentials) async -> KeyCheckResult {
@@ -340,11 +355,8 @@ enum AeroDataBox {
         var start = midnight
         if calendar.isDate(day, inSameDayAs: .now) { start = max(midnight, Date().addingTimeInterval(-3600)) }
         var flights: [ScheduledFlight] = []
-        var isFirstRequest = true
         while start < end {
             let windowEnd = min(start.addingTimeInterval(12 * 3600 - 60), end)
-            if !isFirstRequest { try await Task.sleep(for: .milliseconds(1_200)) } // about one a second
-            isFirstRequest = false
             flights += try await retryingWhenRateLimited {
                 try await requestDepartures(airport: airport, from: start, to: windowEnd, credentials: credentials)
             }
@@ -356,6 +368,7 @@ enum AeroDataBox {
     /// The free plan allows about one request a second, so a "slow down" is waited out and tried again.
     private static func retryingWhenRateLimited<T>(_ request: () async throws -> T) async throws -> T {
         for attempt in 1...3 {
+            await scheduleRequestPacer.waitForSlot()
             do {
                 return try await request()
             } catch ScheduleError.rateLimited where attempt < 3 {
@@ -517,7 +530,7 @@ enum FlightAPI {
         let ac: [LiveAircraft]?
     }
 
-    struct AirlineInfo: Decodable {
+    struct AirlineInfo: Codable {
         let name: String?
         let icao: String?
         let iata: String?
@@ -536,12 +549,40 @@ enum FlightAPI {
 
     /// Looks up the route for an ICAO ("AAL103") or IATA ("AA103") flight number. Nil if unknown.
     static func route(callsign: String) async throws -> FlightRoute? {
+        if let known = routeCache.entry(for: callsign) { return known }
         let (data, status) = try await get("https://api.adsbdb.com/v0/callsign/\(escape(callsign))")
-        if status == 404 { return nil }
+        if status == 404 {
+            routeCache.store(nil, for: callsign)
+            return nil
+        }
         guard status == 200 else { throw URLError(.badServerResponse) }
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
-        return try decoder.decode(RouteEnvelope.self, from: data).response.flightroute
+        let route = try decoder.decode(RouteEnvelope.self, from: data).response.flightroute
+        routeCache.store(route, for: callsign)
+        return route
+    }
+
+    /// Routes barely change, so a flight number is asked about once for a few hours, whoever needs it: a search,
+    /// a refresh, or every row of an import. "No route" is remembered for a shorter time.
+    private static let routeCache = RouteCache()
+
+    private final class RouteCache: @unchecked Sendable {
+        private let lock = NSLock()
+        private var entries: [String: (time: Date, route: FlightRoute?)] = [:]
+
+        /// `.some(nil)` is a remembered "no route"; `nil` is not known yet.
+        func entry(for callsign: String) -> FlightRoute?? {
+            lock.lock(); defer { lock.unlock() }
+            guard let entry = entries[callsign] else { return nil }
+            let lifetime: TimeInterval = entry.route == nil ? 10 * 60 : 6 * 3600
+            return Date().timeIntervalSince(entry.time) < lifetime ? .some(entry.route) : nil
+        }
+
+        func store(_ route: FlightRoute?, for callsign: String) {
+            lock.lock(); defer { lock.unlock() }
+            entries[callsign] = (Date(), route)
+        }
     }
 
     static func aircraft(callsign: String) async throws -> LiveAircraft? {
@@ -583,6 +624,8 @@ struct FlightCandidate: Identifiable {
     var hex: String?
     var schedule: ScheduleReference?
     var aircraft: LiveAircraft?
+    /// A flight already taken, with no schedule record: it goes straight to the Passport instead of being tracked.
+    var isPast = false
 }
 
 enum FlightLookup {
@@ -607,18 +650,82 @@ enum FlightLookup {
         let compact = query.replacingOccurrences(of: "-", with: "")
         guard !compact.isEmpty else { throw NotFound(query: rawQuery, hasSchedules: credentials != nil) }
 
+        let day = AeroDataBox.dayString(date)
+        let cacheKey = "\(compact)|\(day)"
+        if credentials != nil, let cached = scheduleCache.candidates(for: cacheKey) { return cached }
+
+        // The plane in the air is looked for while the schedule is asked, not after it: a flight with no schedule
+        // record costs one wait, not two. Both are free of the AeroDataBox quota except the schedule request itself.
+        let isToday = Calendar.current.isDateInToday(date)
+        async let live = attemptLive(query: query, compact: compact, wanted: isToday)
+
         if let credentials {
-            let day = AeroDataBox.dayString(date)
-            let flights = try await AeroDataBox.flights(number: compact, date: day, credentials: credentials)
+            let flights: [ScheduledFlight]
+            do {
+                flights = try await AeroDataBox.flights(number: compact, date: day, credentials: credentials)
+            } catch ScheduleError.server(let code) where code == 400 {
+                flights = [] // a date AeroDataBox doesn't keep records for
+            }
             let candidates = flights.compactMap { candidate(from: $0, reference: ScheduleReference(number: compact, date: day)) }
-            if !candidates.isEmpty { return candidates }
+            if !candidates.isEmpty {
+                scheduleCache.store(candidates, for: cacheKey)
+                return candidates
+            }
         }
 
-        // Without schedules (or for a tail number), look for the plane in the air right now.
-        guard let live = try await liveCandidate(query: query, compact: compact) else {
-            throw NotFound(query: query, hasSchedules: credentials != nil)
+        // What's in the air only tells about today. For another day, no schedule record means no flight found;
+        // falling back would add today's plane as if it were that day's flight.
+        guard isToday else { throw NotFound(query: query, hasSchedules: credentials != nil) }
+
+        // Without schedules (or for a tail number), the plane in the air right now.
+        switch await live {
+        case .success(let candidate?): return [candidate]
+        case .success(nil): throw NotFound(query: query, hasSchedules: credentials != nil)
+        case .failure(let error): throw error
         }
-        return [live]
+    }
+
+    private static func attemptLive(query: String, compact: String, wanted: Bool) async -> Result<FlightCandidate?, Error> {
+        guard wanted else { return .success(nil) }
+        do {
+            return .success(try await liveCandidate(query: query, compact: compact))
+        } catch {
+            return .failure(error)
+        }
+    }
+
+    /// Schedule answers for a few minutes, so searching the same flight again is instant and costs no request.
+    private static let scheduleCache = ScheduleCache()
+
+    private final class ScheduleCache: @unchecked Sendable {
+        private let lock = NSLock()
+        private var entries: [String: (time: Date, candidates: [FlightCandidate])] = [:]
+
+        func candidates(for key: String) -> [FlightCandidate]? {
+            lock.lock(); defer { lock.unlock() }
+            guard let entry = entries[key], Date().timeIntervalSince(entry.time) < 300 else { return nil }
+            return entry.candidates
+        }
+
+        func store(_ candidates: [FlightCandidate], for key: String) {
+            lock.lock(); defer { lock.unlock() }
+            entries = entries.filter { Date().timeIntervalSince($0.value.time) < 300 }
+            entries[key] = (Date(), candidates)
+        }
+    }
+
+    /// A flight on a day that has passed, when there's no schedule record of it: the flight number's usual route,
+    /// flown that day. The time is a placeholder (midday) the flight's details can correct. Nil if the route isn't known.
+    @MainActor
+    static func pastCandidate(_ rawQuery: String, date: Date, knownAirports: [FlightActivityAttributes.Airport]) async -> FlightCandidate? {
+        let compact = normalize(rawQuery).filter { !$0.isWhitespace }
+        guard compact.count >= 3, compact.contains(where: \.isNumber) else { return nil }
+        let record = PastFlightRecord(flightNumber: compact, day: AeroDataBox.dayString(date))
+        // No credentials: the schedule was just asked and has nothing for that day.
+        guard let flight = await PastFlightImport.flight(from: record, knownAirports: knownAirports, credentials: nil) else { return nil }
+        var candidate = FlightCandidate(attributes: flight.attributes, state: flight.state)
+        candidate.isPast = true
+        return candidate
     }
 
     struct NoFlightsOnRoute: LocalizedError {

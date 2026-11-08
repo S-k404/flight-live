@@ -49,6 +49,50 @@ extension FlightStore {
         return TextImportResult(flightID: flight.id, message: message)
     }
 
+    /// Text or a link from the Share Sheet. A link with no flight in the text itself, like Flighty's, is opened and its page read.
+    func importShared(_ text: String) async -> TextImportResult {
+        let result = await importText(text)
+        guard result.flightID == nil else { return result }
+        let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
+        let range = NSRange(text.startIndex..., in: text)
+        let links = (detector?.matches(in: text, range: range) ?? []).compactMap(\.url).filter { $0.scheme?.hasPrefix("http") == true }
+        for link in links {
+            guard let page = await pageText(link) else { continue }
+            let fromPage = await importText(page)
+            if fromPage.flightID != nil { return fromPage }
+        }
+        return result
+    }
+
+    /// The title, description and visible text of a web page, enough for the text reader to find a flight in.
+    private func pageText(_ url: URL) async -> String? {
+        var request = URLRequest(url: url, timeoutInterval: 10)
+        request.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)", forHTTPHeaderField: "User-Agent")
+        guard let (data, _) = try? await URLSession.shared.data(for: request),
+              let html = String(data: data, encoding: .utf8) else { return nil }
+        func matches(_ pattern: String, in text: String) -> [String] {
+            guard let expression = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive, .dotMatchesLineSeparators]) else { return [] }
+            return expression.matches(in: text, range: NSRange(text.startIndex..., in: text)).compactMap {
+                Range($0.range(at: $0.numberOfRanges - 1), in: text).map { String(text[$0]) }
+            }
+        }
+        // <title> and <meta> descriptions first: share pages often keep the flight there.
+        var pieces = matches("<title[^>]*>(.*?)</title>", in: html)
+        for tag in matches("(<meta[^>]*>)", in: html) where tag.localizedCaseInsensitiveContains("description") || tag.localizedCaseInsensitiveContains("title") {
+            pieces += matches("content=\"([^\"]*)\"", in: tag)
+        }
+        let body = html
+            .replacingOccurrences(of: "<(script|style)[^>]*>.*?</\\1>", with: " ", options: [.regularExpression, .caseInsensitive])
+            .replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression)
+        pieces.append(body)
+        let text = pieces.joined(separator: "\n")
+            .replacingOccurrences(of: "&amp;", with: "&").replacingOccurrences(of: "&quot;", with: "\"")
+            .replacingOccurrences(of: "&#39;", with: "'").replacingOccurrences(of: "&nbsp;", with: " ")
+            .replacingOccurrences(of: "[ \\t\\r\\n]+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespaces)
+        return text.isEmpty ? nil : String(text.prefix(6000))
+    }
+
     /// The tracked flight this text is about: same flight number, nearest departure.
     private func matchingFlight(for details: FlightTextDetails) -> TrackedFlight? {
         guard let number = details.flightNumber else { return nil }

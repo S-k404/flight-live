@@ -9,6 +9,8 @@ struct FlightsListView: View {
     @State private var showingSettings = false
     @State private var passToShow: BoardingPassRoute?
     @State private var showingPassport = false
+    @State private var sharedMessage: String?
+    @State private var editingFlight: TrackedFlight?
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -101,6 +103,9 @@ struct FlightsListView: View {
             .sheet(isPresented: $showingPassport) {
                 PassportView()
             }
+            .sheet(item: $editingFlight) { flight in
+                EditFlightDetailsView(flight: flight)
+            }
             .fullScreenCover(item: $passToShow) { route in
                 if let flight = store.flight(route.id) {
                     BoardingPassViewer(flight: flight)
@@ -108,6 +113,11 @@ struct FlightsListView: View {
             }
             .sensoryFeedback(.impact(weight: .medium), trigger: store.flights.count)
             .onOpenURL(perform: open)
+            .alert("Couldn't add that flight", isPresented: Binding(get: { sharedMessage != nil }, set: { if !$0 { sharedMessage = nil } })) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(sharedMessage ?? "")
+            }
             .onContinueUserActivity(CSSearchableItemActionType) { activity in
                 // Tapped in iPhone search.
                 if let id = activity.userInfo?[CSSearchableItemActivityIdentifier] as? String,
@@ -156,6 +166,19 @@ struct FlightsListView: View {
             Task { path = [await store.addDemo()] }
             return
         }
+        if url.host == "import" {
+            // flightlive://import?text=… from the Share Sheet.
+            let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            guard let text = items.first(where: { $0.name == "text" })?.value, !text.isEmpty else { return }
+            addFlight = nil
+            showingSettings = false
+            showingPassport = false
+            Task {
+                let result = await store.importShared(text)
+                if let id = result.flightID { path = [id] } else { sharedMessage = result.message }
+            }
+            return
+        }
         if url.host == "search" {
             // flightlive://search?q=UA930
             let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
@@ -192,7 +215,20 @@ struct FlightsListView: View {
                 Label("Remove", systemImage: "trash")
             }
         }
+        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+            Button {
+                editingFlight = flight
+            } label: {
+                Label("Edit", systemImage: "pencil")
+            }
+            .tint(Color.flightBlue)
+        }
         .contextMenu {
+            Button {
+                editingFlight = flight
+            } label: {
+                Label("Edit Details", systemImage: "pencil")
+            }
             ShareLink(item: flight.shareText) {
                 Label("Share", systemImage: "square.and.arrow.up")
             }

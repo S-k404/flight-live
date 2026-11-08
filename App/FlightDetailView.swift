@@ -197,6 +197,13 @@ struct FlightDetailView: View {
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    editingDetails = true
+                } label: {
+                    Image(systemName: "pencil")
+                }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
                 Button(role: .destructive) {
                     confirmingDelete = true
                 } label: {
