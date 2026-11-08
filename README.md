@@ -1,3 +1,12 @@
+<!-- datasheet:banner -->
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset=".github/assets/banner-dark.svg">
+    <img src=".github/assets/banner-light.svg" alt="FlightLive: A flight tracker for iPhone with a Flighty-style Live Activity on the Lock Screen and in the Dynamic Island." width="100%">
+  </picture>
+</p>
+<!-- /datasheet:banner -->
+
 # FlightLive
 
 A flight tracker for iPhone with a Flighty-style Live Activity on the Lock Screen and in the Dynamic Island.
@@ -5,6 +14,25 @@ A flight tracker for iPhone with a Flighty-style Live Activity on the Lock Scree
 ![Live Activity states](live-activity-preview.png)
 
 ![App screens](app-preview.png)
+
+<!-- datasheet:figure -->
+## At a glance
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset=".github/assets/diagram-dark.svg">
+    <img src=".github/assets/diagram-light.svg" alt="Block diagram: from live data to the Lock Screen" width="100%">
+  </picture>
+</p>
+
+| Characteristic | Detail |
+| --- | --- |
+| **Platform** | iOS 17+ (Xcode 16 or newer to build); runs in the simulator with a 5-minute demo flight |
+| **Live Activity** | Countdown, gate chip, route bar and context line on the Lock Screen; gate and countdown in the Dynamic Island |
+| **Data** | Free without a key: live positions from adsb.lol, routes from adsbdb.com. Optional AeroDataBox key adds schedules, gates and delays |
+| **Detection** | Pushback, takeoff, landing and gate arrival are detected from live positions; over oceans position is estimated |
+| **Limits** | iOS decides background refresh, usually 15 minutes or more; countdowns keep ticking regardless |
+<!-- /datasheet:figure -->
 
 ## Features
 
@@ -76,3 +104,7 @@ To run it on your own iPhone:
 | `App/FlightsListView.swift`, `AddFlightView.swift`, `FlightDetailView.swift`, `SettingsView.swift` | Screens |
 
 Live position data © adsb.lol contributors, ODbL.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
