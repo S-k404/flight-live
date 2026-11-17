@@ -9,7 +9,9 @@
 
 # FlightLive
 
-A flight tracker for iPhone with a Flighty-style Live Activity on the Lock Screen and in the Dynamic Island.
+**A flight tracker for iPhone with a Flighty-style Live Activity: the countdown on your Lock Screen, the gate in your Dynamic Island, and the plane you are waiting for on a map.**
+
+It tracks real flights from live positions, schedules and gates, warns you about gate changes and delays, and keeps your trips together. Add flights by searching, by sharing a booking email, from your calendar, from Notion or from a boarding pass.
 
 ![Live Activity states](live-activity-preview.png)
 
@@ -31,8 +33,16 @@ A flight tracker for iPhone with a Flighty-style Live Activity on the Lock Scree
 | **Live Activity** | Countdown, gate chip, route bar and context line on the Lock Screen; gate and countdown in the Dynamic Island |
 | **Data** | Free without a key: live positions from adsb.lol, routes from adsbdb.com. Optional AeroDataBox key adds schedules, gates and delays |
 | **Detection** | Pushback, takeoff, landing and gate arrival are detected from live positions; over oceans position is estimated |
+| **Add flights** | Search, share a booking email or text, pick up calendar events, import from Notion or a Flighty CSV, or scan a boarding pass barcode |
+| **Beyond the app** | Home Screen and Lock Screen widget, Siri, Shortcuts and the Action button, Spotlight, iCloud calendar sync, CSV export |
 | **Limits** | iOS decides background refresh, usually 15 minutes or more; countdowns keep ticking regardless |
 <!-- /datasheet:figure -->
+
+## Quick start
+
+1. Open `FlightLive.xcodeproj` in Xcode 16 or newer.
+2. Pick an iPhone simulator with a Dynamic Island (any "Pro" model) and press **Run** (⌘R).
+3. Tap **Watch a 5-minute demo flight**, then lock the simulator (⌘L) for the Lock Screen or go Home (⇧⌘H) for the Dynamic Island.
 
 ## Features
 
@@ -62,17 +72,35 @@ A flight tracker for iPhone with a Flighty-style Live Activity on the Lock Scree
 - **Settings:** aviation, imperial or metric units.
 - **Demo flight:** five minutes covering every stage, with a delay, a gate change and the inbound plane.
 
-## Run it
+**More ways to add a flight**
+- **Share Sheet:** share a booking email, an airport text message, a note or a link from another app to FlightLive and it becomes a new flight, or an update to one you already have. There is also an *Add or Update Flight from Text* action for Shortcuts, so a shortcut or a Messages automation can add flights from airport texts.
+- **Calendar:** flights that Gmail or Apple Mail put in your calendar from a booking email are picked up.
+- **Notion:** connect a Notion database of flights (an integration secret and the database) and import them.
+- **Flighty export:** read a Flighty CSV, or a calendar event, to bring in flights you have already taken.
+- **Boarding pass:** add one from Photos or Files. FlightLive reads the barcode (the IATA BCBP format used by nearly every airline), shows the seat and booking code, and shows the pass full screen at full brightness for the gate scanner. Tapping the Live Activity can open it.
+- **By hand:** enter times, the gate and when boarding starts, for example from your boarding pass.
+- **Suggestions as you type:** airports and airlines are recognised by city, name or code ("Bengaluru" or "BLR").
 
-You need Xcode 16 or newer (free on the Mac App Store). The app runs on iOS 17+.
+**Around the flight**
+- **Weather at the destination** for the time you land, from Open-Meteo.
+- **A photo of the plane** from Wikimedia Commons, the exact aircraft by tail number or else its type, with the photographer's credit. If no photo is found, nothing is shown.
+- **Connections:** the time between landing and the next take-off from the same airport, on My Flights and on the flight screen.
+- **Getting to the airport:** the drive time from Apple Maps with traffic, and when to set off. Your location is asked for only while a leave time is being worked out. If you choose, tapping *Go* also starts your Apple Music (what you were listening to, or a playlist).
+- **Passport:** a map of every route you have flown, shareable stats cards (all time, or one year) and every past flight.
 
-1. Open `FlightLive.xcodeproj`.
-2. Pick an iPhone simulator with a Dynamic Island (any "Pro" model) and press **Run** (⌘R).
-3. Tap **Watch a 5-minute demo flight**. Lock the simulator (⌘L) to see the Lock Screen, or go Home (⇧⌘H) to see the Dynamic Island.
+**Everywhere you are**
+- **Widget:** your next flight, or the one you are on, on the Home Screen and the Lock Screen.
+- **Siri, Shortcuts and the Action button:** *Flight Status*, *Where's My Plane?*, *Get Flight Arrival Time*, *Show Flight on Lock Screen*, *Track a Flight*, *Search for a Flight* and *Update Flights*. Phrases such as "Where's my plane in FlightLive" work as soon as the app is installed.
+- **Spotlight:** type "6E 978" or a city and the flight comes up.
+- **iCloud calendar:** every flight is kept in a "FlightLive" calendar in your iCloud account, so a new iPhone or a reinstall gets them back, and they show in Calendar on your Mac and iPad.
+- **Export:** every flight as a CSV in Flighty's layout, which opens in Numbers or Excel and comes back in with *Import from Flighty*.
 
-To run it on your own iPhone:
-- Open **Signing & Capabilities** for both the `FlightLive` and `FlightLiveWidget` targets and pick your Apple ID team.
-- If Xcode says the bundle identifier is taken, change `com.shamit` to something else in both targets.
+## Run it on your iPhone
+
+You need Xcode 16 or newer (free on the Mac App Store). The app runs on iOS 17+ (iPhone only).
+
+- Open **Signing & Capabilities** for all three targets, `FlightLive`, `FlightLiveWidget` and `FlightLiveShare`, and pick your Apple ID team.
+- If Xcode says the bundle identifier is taken, change its prefix to something of your own in all three targets (the app, the widget and the share extension each have one).
 
 ## Schedules, gates and delays (optional, free key)
 
@@ -81,7 +109,28 @@ To run it on your own iPhone:
 - **Getting the key:** sign up for a free plan on [RapidAPI](https://rapid.aerodatabox.com/pricing) or [API.Market](https://apimarket.aerodatabox.com/). Paste the key in **Settings** in the app; it's stored in the iOS Keychain.
 - **Free-tier usage:** to stay within the free tier, the app checks the schedule every 15 minutes in the last three hours before departure, every 30 minutes in the air, and less often further out. Live positions update every 15 seconds while the app is open.
 
-## Limits
+## Typical application
+
+* **Before the trip:** share the booking email to FlightLive, add the boarding pass from Photos, and check *Getting to the airport* for when to set off.
+* **At the airport:** the Live Activity shows the gate, and the boarding pass is one tap away at full brightness.
+* **In the air:** the countdown ticks on the Lock Screen, and "Where's my plane in FlightLive" works from Siri.
+* **Afterwards:** the flight lands in your Passport, and the Flighty-layout CSV keeps your history portable.
+
+## Absolute maximum ratings
+
+| Parameter | Limit |
+|---|---|
+| Platform | iOS 17 or newer, iPhone only (no Mac Catalyst) |
+| Build | Xcode 16 or newer |
+| Live Activity start | three hours before departure, or right away from the flight screen |
+| Delay colours | green on time or early, amber up to 30 minutes late, red beyond that |
+| Schedule checks (with a key) | every 15 minutes in the last three hours before departure, every 30 minutes in the air, less often further out |
+| Background refresh while closed | decided by iOS, usually every 15 minutes or more |
+| "Boarding" when the airline gives no time | assumed 35 minutes before departure |
+| Cost | Xcode and an Apple ID; the schedule API has a free tier |
+| Flights found without a key | any plane in the air right now |
+
+## Errata
 
 - **Background updates:** while the app is closed, iOS decides when it may refresh, usually every 15 minutes or more. The countdowns keep ticking regardless. Flighty refreshes constantly through its own servers and push notifications. Doing the same here would need a server and a paid Apple Developer account.
 - **Coverage:** ADS-B coverage is thin over oceans. The app switches to an estimated position and says so.
@@ -101,10 +150,29 @@ To run it on your own iPhone:
 | `App/FlightStore.swift` | My Flights storage, refresh schedule, Live Activities, background refresh |
 | `App/FlightEvents.swift` | Change detection for alerts and notifications |
 | `App/AppSettings.swift` | Settings, with the API key in the Keychain |
-| `App/FlightsListView.swift`, `AddFlightView.swift`, `FlightDetailView.swift`, `SettingsView.swift` | Screens |
+| `App/FlightsListView.swift`, `AddFlightView.swift`, `FlightDetailView.swift`, `EditFlightDetailsView.swift`, `SettingsView.swift` | Screens |
+| `App/FlightTextImport.swift`, `FlightTextParser.swift`, `ShareExtension/ShareViewController.swift` | Turns shared or pasted text into a flight; the Share Sheet entry |
+| `App/CalendarImport.swift`, `CalendarSync.swift` | Flights found in calendar events; the iCloud "FlightLive" calendar |
+| `App/NotionImport.swift`, `NotionSettingsView.swift` | Notion database of flights |
+| `App/PastFlightImport.swift`, `FlightExport.swift` | Flighty CSV and calendar import for past flights; CSV export |
+| `App/BoardingPass.swift`, `BoardingPassViews.swift` | Barcode (BCBP) reading; the boarding pass screens |
+| `App/Passport.swift`, `PassportView.swift` | Totals, route map and shareable cards |
+| `App/Connections.swift`, `GettingThere.swift`, `ArrivalWeather.swift`, `AircraftPhotos.swift`, `RouteSearch.swift` | Connections, drive time, arrival weather, plane photos, airport and airline suggestions |
+| `App/FlightIntents.swift`, `SpotlightIndex.swift` | Siri, Shortcuts, Action button and Spotlight |
+| `App/WidgetSync.swift`, `Shared/WidgetSnapshot.swift`, `Shared/NextFlightWidgetViews.swift`, `Widget/NextFlightWidget.swift` | The Home Screen and Lock Screen widget and the data it reads |
 
-Live position data © adsb.lol contributors, ODbL.
+Live position data © adsb.lol contributors, ODbL. Weather from [Open-Meteo](https://open-meteo.com). Plane photos from Wikimedia Commons, shown with their credit and licence.
 
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+<!-- datasheet:footer -->
+---
+
+<p align="center">
+  <a href="https://github.com/S-k404/grab">&larr; U9 grab</a> &middot;
+  <a href="https://github.com/S-k404/S-k404">SK-404 index</a> &middot;
+  <a href="https://github.com/S-k404/study-copilot">U12 study-copilot &rarr;</a>
+</p>
+<!-- /datasheet:footer -->
