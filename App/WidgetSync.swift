@@ -23,6 +23,7 @@ enum WidgetSync {
         last = snapshot
         snapshot.save()
         WidgetCenter.shared.reloadAllTimelines()
+        WatchSync.shared.send(snapshot)
     }
 }
 

@@ -234,6 +234,7 @@ struct SettingsView: View {
                     LabeledContent("Schedules", value: "AeroDataBox")
                     LabeledContent("Weather", value: "Open-Meteo.com (CC BY 4.0)")
                     LabeledContent("Plane photos", value: "Wikimedia Commons")
+                    LabeledContent("Weather radar", value: "RainViewer")
                 }
             }
             .navigationTitle("Settings")

@@ -7,8 +7,27 @@ struct Connection {
     var next: TrackedFlight
     var minutes: Int
 
-    /// Under an hour is tight for most airports, with security and a walk between gates.
-    var isTight: Bool { minutes < 60 }
+    /// What this connection involves, from the airports' countries, the terminals and your bags.
+    var context: ConnectionContext {
+        let arrival = previous.state.arrival.terminal
+        let departure = next.state.departure.terminal
+        return ConnectionContext(
+            arrivesFromAbroad: previous.attributes.origin.flatMap { AirportCountries.isInternational(from: $0.code, to: airport.code) },
+            leavesForAbroad: next.attributes.destination.flatMap { AirportCountries.isInternational(from: airport.code, to: $0.code) },
+            markedInternational: next.connectionIsInternational,
+            terminalChange: ConnectionContext.terminalsDiffer(arrival, departure),
+            arrivalTerminal: arrival,
+            departureTerminal: departure,
+            departureGate: next.state.departure.gate,
+            bagsCheckedThrough: next.bagsCheckedThrough ?? true
+        )
+    }
+
+    var assessment: ConnectionAssessment { ConnectionRules.assess(minutes: minutes, context: context) }
+
+    /// Less than a comfortable connection: never over an hour, and longer when it involves passport control,
+    /// security or a change of terminal. Also what the "tight connection" alert goes by.
+    var isTight: Bool { assessment.risk != .normal }
     /// The next flight leaves before this one lands.
     var isMissed: Bool { minutes < 0 }
 
@@ -18,7 +37,7 @@ struct Connection {
     }
 
     var color: Color {
-        isMissed ? .flightRed : isTight ? .flightAmber : .white.opacity(0.6)
+        isMissed ? .flightRed : isTight ? assessment.risk.color : .white.opacity(0.6)
     }
 }
 
@@ -54,11 +73,11 @@ struct ConnectionRow: View {
             Image(systemName: connection.isTight ? "exclamationmark.triangle.fill" : "arrow.triangle.turn.up.right.circle")
             Text(connection.isMissed ? connection.summary : "Connection · \(connection.summary)")
             if connection.isTight && !connection.isMissed {
-                Text("Tight")
+                Text(connection.assessment.risk == .risky ? "Risky" : "Tight")
                     .font(.system(size: 11, weight: .heavy))
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
-                    .background(Color.flightAmber.opacity(0.2), in: Capsule())
+                    .background(connection.color.opacity(0.2), in: Capsule())
             }
             Spacer()
         }
@@ -68,43 +87,65 @@ struct ConnectionRow: View {
     }
 }
 
-/// On the flight screen: how long you have before the next flight, or after the one before.
+/// On the flight screen: how long you have before the next flight, or after the one before, how likely that is
+/// to be enough, and what's in between.
 struct ConnectionCard: View {
     var connection: Connection
     /// True on the first flight (showing the one after), false on the second.
     var isOutbound: Bool
 
+    @Environment(FlightStore.self) private var store
+
     var body: some View {
         let other = isOutbound ? connection.next : connection.previous
-        NavigationLink(value: other.id) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("CONNECTION IN \(connection.airport.city.uppercased())")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.5))
-                HStack(alignment: .firstTextBaseline) {
-                    Text(connection.isMissed ? "Missed" : FlightPresentation.duration(connection.minutes))
-                        .font(.title2.weight(.bold))
-                        .foregroundStyle(connection.isTight ? connection.color : .white)
-                    if connection.isTight && !connection.isMissed {
-                        Text("Tight")
-                            .font(.caption.weight(.heavy))
-                            .foregroundStyle(Color.flightAmber)
+        VStack(alignment: .leading, spacing: 14) {
+            NavigationLink(value: other.id) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("CONNECTION IN \(connection.airport.city.uppercased())")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.5))
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(connection.isMissed ? "Missed" : FlightPresentation.duration(connection.minutes))
+                            .font(.title2.weight(.bold))
+                            .foregroundStyle(connection.isMissed ? connection.color : .white)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(.white.opacity(0.4))
                     }
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(.white.opacity(0.4))
+                    Text(detail(other))
+                        .font(.subheadline)
+                        .foregroundStyle(.white.opacity(0.7))
                 }
-                Text(detail(other))
-                    .font(.subheadline)
-                    .foregroundStyle(.white.opacity(0.7))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
-            .padding(16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .foregroundStyle(.white)
-            .background(Color.flightCard, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .buttonStyle(.plain)
+
+            if !connection.isMissed {
+                ConnectionAssistantView(
+                    airportCode: connection.airport.code,
+                    minutes: connection.minutes,
+                    assessment: connection.assessment,
+                    context: connection.context,
+                    nextDeparture: connection.next.state.departure,
+                    zone: connection.airport.timeZone,
+                    nextDestinationCode: connection.next.attributes.destination?.code,
+                    bagsCheckedThrough: Binding(
+                        get: { connection.next.bagsCheckedThrough ?? true },
+                        set: { value in store.edit(connection.next.id) { $0.bagsCheckedThrough = value } }
+                    ),
+                    isInternational: Binding(
+                        get: { connection.context.isInternational },
+                        set: { value in store.edit(connection.next.id) { $0.connectionIsInternational = value } }
+                    )
+                )
+            }
         }
-        .buttonStyle(.plain)
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .foregroundStyle(.white)
+        .background(Color.flightCard, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 
     /// "Next: 6E 1641 to Ho Chi Minh City at 9:15 PM" or "From 6E 669, landing 2:15 PM".

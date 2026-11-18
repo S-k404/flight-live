@@ -43,6 +43,11 @@ struct TrackedFlight: Codable, Identifiable {
     var travel: TravelEstimate?
     /// AeroDataBox has answered about this past flight's plane and times, so it isn't asked again.
     var pastDetailsChecked: Bool?
+    /// On the connection into this flight: whether your bags go through to it. Nil counts as yes.
+    var bagsCheckedThrough: Bool?
+    /// On the connection into this flight: your say that it's international (or not), when the airports' countries
+    /// don't settle it. Nil goes by the airports.
+    var connectionIsInternational: Bool?
 
     static let defaultBoardingMinutes = 40
 
@@ -1277,6 +1282,13 @@ final class FlightStore {
 
     /// - Parameter persist: Write to disk now. Otherwise the change is kept in memory and written within
     ///   two minutes, or when the app goes to the background.
+    /// Changes one saved flight, for a choice made on its screen.
+    func edit(_ id: UUID, _ change: (inout TrackedFlight) -> Void) {
+        guard var flight = flight(id) else { return }
+        change(&flight)
+        replace(flight)
+    }
+
     private func replace(_ flight: TrackedFlight, persist: Bool = true) {
         guard let index = flights.firstIndex(where: { $0.id == flight.id }) else { return }
         flights[index] = flight

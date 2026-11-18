@@ -57,6 +57,9 @@ enum AircraftPhotos {
 
     private enum LookupError: Error { case unavailable }
 
+    /// Wikimedia was busy or out of reach a moment ago, so a plane with no photo may be worth asking about again.
+    static var isRetryWorthwhile: Bool { Date.now < coolingDownUntil }
+
     /// Photos found whose picture then wouldn't load, and when to look for them again.
     private static var brokenUntil: [String: Date] = [:]
 
@@ -71,8 +74,16 @@ enum AircraftPhotos {
         if let model { attempts.append(("type:\(model)", { try await photo(model: model) })) }
         for attempt in attempts {
             guard let found = await cached(attempt.key, lookup: attempt.lookup) else { continue }
-            if let picture = await Self.image(for: found) { return (found, picture) }
-            forget(attempt.key)
+            switch await fetch(found) {
+            case .image(let picture):
+                return (found, picture)
+            case .busy:
+                // Too many requests or no signal: the photo is fine, so keep it and try again soon.
+                if Task.isCancelled { return nil }
+                coolingDownUntil = .now.addingTimeInterval(30)
+            case .gone:
+                forget(attempt.key)
+            }
         }
         return nil
     }
@@ -87,18 +98,33 @@ enum AircraftPhotos {
 
     /// The picture itself, from memory, the app's cache folder, or downloaded.
     static func image(for photo: AircraftPhoto) async -> UIImage? {
-        if let image = images[photo.imageURL] { return image }
+        if case .image(let image) = await fetch(photo) { return image }
+        return nil
+    }
+
+    private enum Fetch {
+        case image(UIImage)
+        /// Wikimedia is busy or there's no signal, which says nothing about the picture.
+        case busy
+        /// Taken down, or not a picture.
+        case gone
+    }
+
+    private static func fetch(_ photo: AircraftPhoto) async -> Fetch {
+        if let image = images[photo.imageURL] { return .image(image) }
         let file = cacheFolder.appendingPathComponent(
             SHA256.hash(data: Data(photo.imageURL.absoluteString.utf8)).map { String(format: "%02x", $0) }.joined() + ".jpg")
         if let data = try? Data(contentsOf: file), let image = UIImage(data: data) {
             images[photo.imageURL] = image
-            return image
+            return .image(image)
         }
         guard let (data, response) = try? await HTTP.session.data(from: photo.imageURL),
-              (response as? HTTPURLResponse)?.statusCode == 200, let image = UIImage(data: data) else { return nil }
+              let status = (response as? HTTPURLResponse)?.statusCode else { return .busy }
+        guard status == 200 else { return status == 429 || status >= 500 ? .busy : .gone }
+        guard let image = UIImage(data: data) else { return .gone }
         try? data.write(to: file)
         images[photo.imageURL] = image
-        return image
+        return .image(image)
     }
 
     // MARK: - Looking up
@@ -131,8 +157,13 @@ enum AircraftPhotos {
             "generator": "search", "gsrnamespace": "6", "gsrlimit": "5",
             "gsrsearch": "intitle:\"\(registration)\" filetype:bitmap",
         ])
-        let matching = pages.filter { $0.title.uppercased().contains(registration.uppercased()) }
-        return (matching.first { $0.isLandscape } ?? matching.first)?.photo(isThisAircraft: true)
+        // The tail number on its own, so N509 doesn't pick up a photo of N5090.
+        let tail = "(?<![A-Z0-9])" + NSRegularExpression.escapedPattern(for: registration) + "(?![A-Z0-9])"
+        let matching = pages.filter { $0.title.range(of: tail, options: [.regularExpression, .caseInsensitive]) != nil && $0.looksLikeAircraft }
+        for file in (matching.filter(\.isLandscape) + matching.filter { !$0.isLandscape }).prefix(3) {
+            if let file = try await usable(file) { return file.photo(isThisAircraft: true) }
+        }
+        return nil
     }
 
     /// The lead photo of the type's Wikipedia article, e.g. "Airbus A321neo".
@@ -142,7 +173,8 @@ enum AircraftPhotos {
             titles.append(String(base)) // "ATR 72-600" → "ATR 72"
         }
         for title in titles {
-            if let file = try await leadImage(article: title), let page = try await commons(["titles": "File:\(file)"]).first {
+            if let file = try await leadImage(article: title), let page = try await commons(["titles": "File:\(file)"]).first,
+               let page = try await usable(page) {
                 return page.photo(isThisAircraft: false)
             }
         }
@@ -166,8 +198,21 @@ enum AircraftPhotos {
         var license: String?
         var width: Int
         var height: Int
+        /// The width of the version `thumbURL` points to.
+        var thumbWidth: Int
+        /// The Commons categories it's in. Empty when the answer didn't say.
+        var categories: [String] = []
+
+        /// In an aircraft or airline category, so a tail number that turns up in some other file's name doesn't count.
+        /// Files whose categories weren't returned are given the benefit of the doubt.
+        var looksLikeAircraft: Bool {
+            categories.isEmpty || categories.contains { $0.range(of: #"(?i)aircraft|airplane|airliner|aviation|airline|airways"#, options: .regularExpression) != nil }
+        }
 
         var isLandscape: Bool { width > height }
+
+        /// The API answers with the original file when the photo is no wider than the size asked for.
+        var isUnscaled: Bool { thumbURL.absoluteString.contains("thumbnail_unscaled") || (thumbWidth > 0 && thumbWidth >= width) }
 
         func photo(isThisAircraft: Bool) -> AircraftPhoto {
             let credit = [artist, license].compactMap { $0 }.joined(separator: " · ")
@@ -176,11 +221,24 @@ enum AircraftPhotos {
         }
     }
 
-    /// Image files with a 1200-pixel-wide version, the photographer and the licence.
-    private static func commons(_ query: [String: String]) async throws -> [CommonsFile] {
+    /// Wikimedia's image servers answer 429 ("too many requests") for an original file, however rarely it's asked for,
+    /// and the API gives out the original's address when a photo is no wider than the size asked for (a 1200-pixel-wide
+    /// photo asked for at 1200). A smaller standard thumbnail size is a real resize, and that loads.
+    private static func usable(_ file: CommonsFile) async throws -> CommonsFile? {
+        guard file.isUnscaled else { return file }
+        guard let step = thumbnailSteps.first(where: { $0 < file.width }) else { return nil }
+        return try await commons(["titles": file.title], width: step).first { !$0.isUnscaled }
+    }
+
+    /// The thumbnail widths Wikimedia serves, below the 1280 that `commons` normally gets.
+    private static let thumbnailSteps = [960, 500, 330, 250, 120]
+
+    /// Image files with a version `width` pixels wide, the photographer and the licence.
+    private static func commons(_ query: [String: String], width: Int = 1200) async throws -> [CommonsFile] {
         var parameters = query
         parameters.merge([
-            "action": "query", "prop": "imageinfo", "iiprop": "url|extmetadata|size", "iiurlwidth": "1200",
+            "action": "query", "prop": "imageinfo|categories", "clshow": "!hidden", "cllimit": "30",
+            "iiprop": "url|extmetadata|size", "iiurlwidth": String(width),
             "iiextmetadatafilter": "Artist|LicenseShortName", "format": "json", "formatversion": "2",
         ]) { mine, _ in mine }
         let json = try await get("https://commons.wikimedia.org/w/api.php", parameters)
@@ -198,7 +256,9 @@ enum AircraftPhotos {
                 artist: (meta?["Artist"]?["value"] as? String).map(plainText),
                 license: meta?["LicenseShortName"]?["value"] as? String,
                 width: info["width"] as? Int ?? 0,
-                height: info["height"] as? Int ?? 0
+                height: info["height"] as? Int ?? 0,
+                thumbWidth: info["thumbwidth"] as? Int ?? 0,
+                categories: (page["categories"] as? [[String: Any]])?.compactMap { $0["title"] as? String } ?? []
             )
         }
     }
@@ -267,10 +327,18 @@ struct AircraftPhotoView: View {
             // A different plane than before (say its details just arrived): don't leave the old one's photo up.
             photo = nil
             image = nil
-            guard let loaded = await AircraftPhotos.loaded(registration: registration, model: model) else { return }
-            withAnimation(.easeOut(duration: 0.25)) {
-                image = loaded.image
-                photo = loaded.photo
+            // If Wikimedia was only busy, ask again once it has had time to calm down, rather than staying blank.
+            for _ in 0..<3 {
+                if let loaded = await AircraftPhotos.loaded(registration: registration, model: model) {
+                    withAnimation(.easeOut(duration: 0.25)) {
+                        image = loaded.image
+                        photo = loaded.photo
+                    }
+                    return
+                }
+                guard AircraftPhotos.isRetryWorthwhile else { return }
+                try? await Task.sleep(for: .seconds(35))
+                if Task.isCancelled { return }
             }
         }
     }

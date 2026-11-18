@@ -85,8 +85,9 @@ It tracks real flights from live positions, schedules and gates, warns you about
 
 **Around the flight**
 - **Weather at the destination** for the time you land, from Open-Meteo.
+- **Weather radar:** a map on the flight screen with the route (flown part solid, the rest dotted), the two airports as pills, the plane turned to its track, and the last two hours of precipitation radar looping over it. Tap it for full screen, where you can move and zoom. Play and pause it, and it says how old each picture is. If the radar can't be reached it is taken off the map and says so. Radar is only fetched while the map is on screen, and the frames list is read once each time you open the flight.
 - **A photo of the plane** from Wikimedia Commons, the exact aircraft by tail number or else its type, with the photographer's credit. If no photo is found, nothing is shown.
-- **Connections:** the time between landing and the next take-off from the same airport, on My Flights and on the flight screen.
+- **Connections:** the time between landing and the next take-off from the same airport, on My Flights and on the flight screen. The flight screen also rates it (Risky, Minimum or Normal) on a gauge and lists what the connection involves: passport control, collecting and re-checking bags, a train or shuttle between terminals, security, the walk to the gate and the gate closing. Every time there is an estimate from typical times at large airports, not from the airport or the airline, and the card says so. Which checkpoints apply comes from the countries of the airports, the terminals and whether your bags are checked through; you can change the bags and the international choices on the card. A connection under an hour is never rated Normal.
 - **When to leave:** a timeline on the flight screen. Leave from where you are (with the street name), the drive time from Apple Maps with traffic, and "Up by 15m" in red when traffic has made it longer than the first estimate. Then when to arrive at the airport and at which terminal, and the time you want to have there. That time is set in Settings: 90 minutes for a domestic flight and 3 hours for an international one. A flight counts as international when the two airports are in different countries; if an airport's country isn't known, it is treated as domestic and says so. Without location access the card says so and offers to turn it on, and until then uses a set time before departure. The Lock Screen's "Leave by" line and the reminder use the same time. Your location is asked for only while a leave time is being worked out. If you choose, tapping *Go* also starts your Apple Music (what you were listening to, or a playlist).
 - **Passport:** a map of every route you have flown, shareable stats cards (all time, or one year) and every past flight.
 
@@ -137,6 +138,7 @@ You need Xcode 16 or newer (free on the Mac App Store). The app runs on iOS 17+ 
 - **Background updates:** while the app is closed, iOS decides when it may refresh, usually every 15 minutes or more. The countdowns keep ticking regardless. Flighty refreshes constantly through its own servers and push notifications. Doing the same here would need a server and a paid Apple Developer account.
 - **Coverage:** ADS-B coverage is thin over oceans. The app switches to an estimated position and says so.
 - **"Boarding":** comes from the airline when AeroDataBox has it. Otherwise it's assumed to start 35 minutes before departure.
+- **Radar:** RainViewer's free service is for personal and educational use, shows only the last two hours (no forecast) and only zooms in to level 7 (the map stretches that picture beyond). It allows 100 requests per address per minute, so the app loads the radar slowly and keeps what it has. It makes no promise that radar will be available. If you ever distribute FlightLive beyond personal use, you would need RainViewer's commercial terms.
 
 ## Files
 
@@ -161,10 +163,12 @@ You need Xcode 16 or newer (free on the Mac App Store). The app runs on iOS 17+ 
 | `App/Passport.swift`, `PassportView.swift` | Totals, route map and shareable cards |
 | `App/Connections.swift`, `GettingThere.swift`, `ArrivalWeather.swift`, `AircraftPhotos.swift`, `RouteSearch.swift` | Connections, drive time, arrival weather, plane photos, airport and airline suggestions |
 | `App/WhenToLeave.swift`, `AirportCountries.swift` | The When to Leave timeline and the time at the airport; which country each airport is in |
+| `App/ConnectionAssistant.swift` | The connection gauge and checklist, and the table of typical times behind them |
+| `App/WeatherRadar.swift` | The weather radar map, its frames, and the tile loader that keeps to RainViewer's request limit |
 | `App/FlightIntents.swift`, `SpotlightIndex.swift` | Siri, Shortcuts, Action button and Spotlight |
 | `App/WidgetSync.swift`, `Shared/WidgetSnapshot.swift`, `Shared/NextFlightWidgetViews.swift`, `Widget/NextFlightWidget.swift` | The Home Screen and Lock Screen widget and the data it reads |
 
-Live position data © adsb.lol contributors, ODbL. Weather from [Open-Meteo](https://open-meteo.com). Plane photos from Wikimedia Commons, shown with their credit and licence. Airport countries from [OurAirports](https://ourairports.com/data/), public domain.
+Live position data © adsb.lol contributors, ODbL. Weather from [Open-Meteo](https://open-meteo.com). Plane photos from Wikimedia Commons, shown with their credit and licence. Airport countries from [OurAirports](https://ourairports.com/data/), public domain. Weather radar by [RainViewer](https://www.rainviewer.com/), used under its free terms for personal and educational use.
 
 ## License
 

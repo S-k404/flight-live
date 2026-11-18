@@ -58,6 +58,13 @@ struct FlightDetailView: View {
 
                 LiveActivityControl(flight: flight)
 
+                // Lazy, so the radar is only fetched once the card is on screen, not as soon as the flight opens.
+                if attributes.origin != nil, attributes.destination != nil, !state.phase.isFinal {
+                    LazyVStack {
+                        RadarCard(flight: flight)
+                    }
+                }
+
                 if !state.phase.hasDeparted && state.phase != .cancelled {
                     Button {
                         editingDetails = true
