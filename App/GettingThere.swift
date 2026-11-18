@@ -8,9 +8,19 @@ struct TravelEstimate: Codable, Equatable {
     var minutes: Int
     var distanceKm: Double
     var updatedAt: Date
+    /// The drive time the first time it was worked out for this trip, to show how much traffic has changed it.
+    var firstMinutes: Int?
+    /// Where the drive starts, like "1600 Main St, Austin". Nil until the street name has been looked up.
+    var placeName: String?
 
     /// Close enough that there's nothing left to drive.
     var isAtAirport: Bool { distanceKm < 2 }
+
+    /// Minutes the drive has grown by since the first estimate, when it's enough to mention.
+    var minutesWorse: Int? {
+        guard let firstMinutes, minutes - firstMinutes >= 5 else { return nil }
+        return minutes - firstMinutes
+    }
 }
 
 /// When to set off for the airport.
@@ -106,6 +116,15 @@ enum GettingThere {
             distanceKm: response.distance / 1000,
             updatedAt: .now
         )
+    }
+
+    /// "1600 Main St, Austin" for where you are, from Apple's geocoder. Nil when offline or it has no answer.
+    static func placeName(for location: CLLocation) async -> String? {
+        guard let mark = try? await CLGeocoder().reverseGeocodeLocation(location).first else { return nil }
+        let street = [mark.subThoroughfare, mark.thoroughfare].compactMap { $0 }.joined(separator: " ")
+        // `name` is often just the street again, so only fall back to it when there's no street.
+        let parts = [street.isEmpty ? mark.name : street, mark.locality].compactMap { $0 }.filter { !$0.isEmpty }
+        return parts.isEmpty ? nil : parts.joined(separator: ", ")
     }
 
     /// "Go": starts your music, if you picked some, and opens Apple Maps with driving directions to the airport.

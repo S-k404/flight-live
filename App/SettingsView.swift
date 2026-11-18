@@ -140,13 +140,17 @@ struct SettingsView: View {
                                 }
                             }
                         }
-                    if settings.leaveUsingLocation {
-                        Picker("Be at the airport", selection: $settings.arriveAtAirportMinutes) {
-                            ForEach([45, 60, 90, 120, 150, 180, 240], id: \.self) { minutes in
-                                Text("\(FlightPresentation.duration(minutes)) before").tag(minutes)
-                            }
+                    Picker("At the airport, domestic", selection: $settings.domesticAirportMinutes) {
+                        ForEach(airportMinuteChoices(including: settings.domesticAirportMinutes), id: \.self) { minutes in
+                            Text("\(FlightPresentation.duration(minutes)) before").tag(minutes)
                         }
-                    } else {
+                    }
+                    Picker("At the airport, international", selection: $settings.internationalAirportMinutes) {
+                        ForEach(airportMinuteChoices(including: settings.internationalAirportMinutes), id: \.self) { minutes in
+                            Text("\(FlightPresentation.duration(minutes)) before").tag(minutes)
+                        }
+                    }
+                    if !settings.leaveUsingLocation {
                         Picker("Leave for the airport", selection: $settings.leaveForAirportMinutes) {
                             Text("Off").tag(0)
                             ForEach([60, 90, 120, 150, 180, 240], id: \.self) { minutes in
@@ -257,9 +261,15 @@ struct SettingsView: View {
             return "FlightLive isn't allowed to use your location. You can allow it in Settings › FlightLive › Location."
         }
         if settings.leaveUsingLocation {
-            return "On the day of your flight, FlightLive asks Apple Maps how long the drive to the airport takes from where you are, with traffic, and reminds you when to leave. Tap Go on the reminder to start your music and open Apple Maps directions. Your location is only checked while FlightLive is open or updating, and never leaves your phone except to ask Apple Maps for the route."
+            return "On the day of your flight, FlightLive asks Apple Maps how long the drive to the airport takes from where you are, with traffic, and reminds you when to leave so you're at the airport for the time you set. A flight between two countries uses the international time. Tap Go on the reminder to start your music and open Apple Maps directions. Your location is only checked while FlightLive is open or updating, and never leaves your phone except to ask Apple for the route and the name of your street."
         }
-        return "Turn on Time it from my location to get a leave time from Apple Maps with live traffic instead of a fixed time. Tap Go on the reminder to start your music and open Apple Maps directions."
+        return "Turn on Time it from my location to get a leave time from Apple Maps with live traffic instead of a fixed time. The times at the airport set when you arrive; a flight between two countries uses the international time. Tap Go on the reminder to start your music and open Apple Maps directions."
+    }
+
+    /// The times offered for being at the airport, plus the current one if it isn't one of them.
+    private func airportMinuteChoices(including current: Int) -> [Int] {
+        let choices = [45, 60, 75, 90, 105, 120, 150, 180, 210, 240]
+        return choices.contains(current) ? choices : (choices + [current]).sorted()
     }
 
     private func checkKey() async {

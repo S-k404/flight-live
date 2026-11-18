@@ -24,35 +24,16 @@ struct FlightLiveActivity: Widget {
 
             return DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    HStack(spacing: 8) {
-                        AirlineBadge(code: attributes.airlineCode, size: 26)
-                        VStack(alignment: .leading, spacing: 0) {
-                            Text(attributes.flightNumber)
-                                .font(.system(size: 15, weight: .bold))
-                            Text(attributes.destination.map { "to \($0.city)" } ?? presentation.statusText)
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(.white.opacity(0.55))
-                                .lineLimit(1)
-                        }
-                    }
-                    .padding(.leading, 4)
+                    ExpandedLeading(attributes: attributes, presentation: presentation)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    VStack(alignment: .trailing, spacing: 0) {
-                        Text(presentation.countdownLabel.uppercased())
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundStyle(.white.opacity(0.5))
-                            .lineLimit(1)
-                        CountdownValue(presentation: presentation, size: 20, alignment: .trailing)
-                            .foregroundStyle(presentation.tone.color)
-                    }
-                    .padding(.trailing, 4)
+                    ExpandedTrailing(state: state, presentation: presentation)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     ExpandedBottom(attributes: attributes, state: state, presentation: presentation, isStale: context.isStale)
                 }
             } compactLeading: {
-                CompactLeading(attributes: attributes, state: state, presentation: presentation)
+                CompactLeading(state: state, presentation: presentation)
             } compactTrailing: {
                 CompactTrailing(state: state, presentation: presentation)
             } minimal: {
@@ -74,26 +55,65 @@ struct FlightLiveActivity: Widget {
     }
 }
 
+private struct ExpandedLeading: View {
+    var attributes: FlightActivityAttributes
+    var presentation: FlightPresentation
+
+    var body: some View {
+        HStack(spacing: 8) {
+            AirlineBadge(code: attributes.airlineCode, size: 26)
+            VStack(alignment: .leading, spacing: 0) {
+                Text(attributes.flightNumber)
+                    .font(.system(size: 15, weight: .bold))
+                Text(attributes.destination.map { "to \($0.city)" } ?? presentation.statusText)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.55))
+                    .lineLimit(1)
+            }
+        }
+        .padding(.leading, 4)
+    }
+}
+
+/// The seat, or the status in words when there is no seat.
+private struct ExpandedTrailing: View {
+    var state: FlightActivityAttributes.ContentState
+    var presentation: FlightPresentation
+
+    var body: some View {
+        Group {
+            if let seat = state.seat {
+                SeatTag(seat: seat)
+            } else {
+                Text(presentation.statusText)
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(presentation.tone.color)
+                    .lineLimit(1)
+            }
+        }
+        .padding(.trailing, 4)
+    }
+}
+
 private struct ExpandedBottom: View {
     var attributes: FlightActivityAttributes
     var state: FlightActivityAttributes.ContentState
     var presentation: FlightPresentation
     var isStale: Bool
 
+    /// "UNTIL GATE ARRIVAL". The island has no room for the context line, so an estimated position is said here.
+    private var caption: String {
+        let text = presentation.untilCaption.uppercased()
+        return state.positionIsEstimated == true && state.phase.isAirborne ? "\(text) · POSITION ESTIMATED" : text
+    }
+
     var body: some View {
-        VStack(spacing: 9) {
+        VStack(spacing: 6) {
             if let origin = attributes.origin, let destination = attributes.destination {
-                let muted = state.phase == .cancelled
-                HStack(spacing: 10) {
-                    EndpointLabel(airport: origin, movement: state.departure, alignment: .leading, muted: muted)
-                    RouteProgressBar(
-                        progress: state.planeProgress,
-                        tint: presentation.tone.color,
-                        interval: state.flightInterval,
-                        showsPlane: !isStale
-                    )
-                    EndpointLabel(airport: destination, movement: state.arrival, alignment: .trailing, muted: muted)
-                }
+                LiveRouteRow(
+                    origin: origin, destination: destination, state: state,
+                    tint: presentation.tone.color, isStale: isStale
+                )
             } else {
                 let units = state.units ?? .aviation
                 HStack {
@@ -102,25 +122,19 @@ private struct ExpandedBottom: View {
                     MiniStat(label: "CLIMB", value: state.verticalRateFPM.map { "\($0) fpm" } ?? "—", alignment: .trailing)
                 }
             }
-            HStack(spacing: 8) {
-                Text(presentation.detail)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.6))
-                    .lineLimit(1)
-                    .id(presentation.detail)
-                    .transition(.push(from: .bottom))
+            HStack(alignment: .center, spacing: 8) {
+                VStack(alignment: .leading, spacing: 0) {
+                    CountdownValue(presentation: presentation, size: 22)
+                        .foregroundStyle(presentation.tone.color)
+                    Text(caption)
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.5))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
                 Spacer(minLength: 4)
                 if let chip = presentation.chip {
-                    HStack(spacing: 4) {
-                        Text(chip.label)
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundStyle(.white.opacity(0.5))
-                        GateChip(chip: chip, compact: true)
-                    }
-                } else {
-                    Text(presentation.statusText)
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(presentation.tone.color)
+                    GateChip(chip: chip, compact: true, showsIcon: true)
                 }
             }
         }
@@ -129,15 +143,48 @@ private struct ExpandedBottom: View {
     }
 }
 
-/// Gate before departure; in the air, a small bar that fills by itself (like Flighty); otherwise the destination.
+/// A status dot and the countdown, colored by delay. Once there is nothing to count down to, the status in words.
 private struct CompactLeading: View {
-    var attributes: FlightActivityAttributes
     var state: FlightActivityAttributes.ContentState
     var presentation: FlightPresentation
 
     var body: some View {
-        if !state.phase.hasDeparted, let chip = presentation.chip {
-            GateChip(chip: chip, compact: true)
+        HStack(spacing: 5) {
+            Circle()
+                .fill(presentation.tone.color)
+                .frame(width: 8, height: 8)
+            if let target = presentation.countdownTarget, target > .now {
+                // A timer text grows to fill whatever space it's offered, which pushes the
+                // island wide; a fixed width sized to "1:25:00" or "25:00" keeps it compact.
+                let remaining = target.timeIntervalSinceNow
+                Text(timerInterval: Date.now...target, countsDown: true)
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .multilineTextAlignment(.leading)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                    .foregroundStyle(presentation.tone.color)
+                    .frame(width: remaining >= 36_000 ? 62 : remaining >= 3_600 ? 54 : 38, alignment: .leading)
+            } else {
+                Text(presentation.statusText)
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(presentation.tone.color)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                    .frame(maxWidth: 62, alignment: .leading)
+            }
+        }
+    }
+}
+
+/// The gate, belt or terminal. With nothing to show, a bar that fills by itself in the air (like Flighty), else the phase.
+private struct CompactTrailing: View {
+    var state: FlightActivityAttributes.ContentState
+    var presentation: FlightPresentation
+
+    var body: some View {
+        if let chip = presentation.chip {
+            GateChip(chip: chip, compact: true, showsIcon: true)
         } else if let interval = state.flightInterval {
             HStack(spacing: 5) {
                 Image(systemName: "airplane")
@@ -147,78 +194,68 @@ private struct CompactLeading: View {
                     .frame(width: 34)
             }
         } else {
-            HStack(spacing: 4) {
-                Image(systemName: state.phase.isAirborne ? "airplane" : state.phase.symbol)
-                    .foregroundStyle(presentation.tone.color)
-                Text(attributes.destination?.code ?? attributes.flightNumber)
-                    .font(.system(size: 14, weight: .bold, design: .rounded))
-                    .lineLimit(1)
-            }
-        }
-    }
-}
-
-/// Countdown to departure or arrival, colored by delay.
-private struct CompactTrailing: View {
-    var state: FlightActivityAttributes.ContentState
-    var presentation: FlightPresentation
-
-    var body: some View {
-        if let target = presentation.countdownTarget, target > .now {
-            // A timer text grows to fill whatever space it's offered, which pushes the
-            // island wide; a fixed width sized to "1:25:00" or "25:00" keeps it compact.
-            let remaining = target.timeIntervalSinceNow
-            Text(timerInterval: Date.now...target, countsDown: true)
-                .font(.system(size: 14, weight: .bold, design: .rounded))
-                .monospacedDigit()
-                .multilineTextAlignment(.trailing)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-                .foregroundStyle(presentation.tone.color)
-                .frame(width: remaining >= 36_000 ? 70 : remaining >= 3_600 ? 62 : 46, alignment: .trailing)
-        } else if state.phase.isFinal {
             Image(systemName: state.phase.symbol)
                 .foregroundStyle(presentation.tone.color)
-        } else {
-            Text(presentation.statusText)
-                .font(.system(size: 12, weight: .bold))
-                .foregroundStyle(presentation.tone.color)
-                .lineLimit(1)
-                .frame(maxWidth: 70)
         }
     }
 }
+
+// Every phase, so none of them is only ever seen on a real flight.
 
 #Preview("Lock Screen", as: .content, using: FlightActivityAttributes.demo) {
     FlightLiveActivity()
 } contentStates: {
     FlightActivityAttributes.ContentState.scheduled
+    FlightActivityAttributes.ContentState.delayed
     FlightActivityAttributes.ContentState.boarding
+    FlightActivityAttributes.ContentState.taxiingOut
     FlightActivityAttributes.ContentState.cruising
     FlightActivityAttributes.ContentState.descending
     FlightActivityAttributes.ContentState.landed
     FlightActivityAttributes.ContentState.cancelled
+    FlightActivityAttributes.ContentState.diverted
 }
 
 #Preview("Island expanded", as: .dynamicIsland(.expanded), using: FlightActivityAttributes.demo) {
     FlightLiveActivity()
 } contentStates: {
     FlightActivityAttributes.ContentState.scheduled
+    FlightActivityAttributes.ContentState.delayed
+    FlightActivityAttributes.ContentState.boarding
+    FlightActivityAttributes.ContentState.taxiingOut
     FlightActivityAttributes.ContentState.cruising
+    FlightActivityAttributes.ContentState.descending
     FlightActivityAttributes.ContentState.landed
+    FlightActivityAttributes.ContentState.cancelled
+    FlightActivityAttributes.ContentState.diverted
 }
 
 #Preview("Island compact", as: .dynamicIsland(.compact), using: FlightActivityAttributes.demo) {
     FlightLiveActivity()
 } contentStates: {
     FlightActivityAttributes.ContentState.scheduled
+    FlightActivityAttributes.ContentState.delayed
+    FlightActivityAttributes.ContentState.boarding
+    FlightActivityAttributes.ContentState.taxiingOut
     FlightActivityAttributes.ContentState.cruising
+    FlightActivityAttributes.ContentState.descending
+    FlightActivityAttributes.ContentState.landed
+    FlightActivityAttributes.ContentState.cancelled
+    FlightActivityAttributes.ContentState.diverted
 }
 
 #Preview("Island minimal", as: .dynamicIsland(.minimal), using: FlightActivityAttributes.demo) {
     FlightLiveActivity()
 } contentStates: {
+    FlightActivityAttributes.ContentState.scheduled
+    FlightActivityAttributes.ContentState.delayed
+    FlightActivityAttributes.ContentState.boarding
+    FlightActivityAttributes.ContentState.taxiingOut
     FlightActivityAttributes.ContentState.cruising
+    FlightActivityAttributes.ContentState.descending
+    FlightActivityAttributes.ContentState.landed
+    FlightActivityAttributes.ContentState.cancelled
+    FlightActivityAttributes.ContentState.diverted
 }
 
 #Preview("Private plane", as: .content, using: FlightActivityAttributes.noRoute) {

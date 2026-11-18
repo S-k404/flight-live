@@ -47,13 +47,15 @@ It tracks real flights from live positions, schedules and gates, warns you about
 ## Features
 
 **Live Activity**
-- A big live countdown: "Departs in", then "Arrives in", then "At the gate in". It keeps ticking between updates.
+- Top row: airline badge, flight number and your seat. Under each time, the terminal and how late or early it is ("T2 · 10m late", "5m early · T4").
+- A live headline that keeps ticking: "Departs gate in", then "Arrives at gate in", then "At the gate in", with a line of context under it and the gate on the right as a yellow chip with a walking figure (a suitcase for the baggage belt).
 - A yellow chip for the departure gate, then the arrival gate, then the baggage belt.
-- Each airport's times shown in its local time zone. Times are colored by delay: green on time or early, amber up to 30 minutes late, red beyond that. When a time changes, the original is struck through.
+- Each airport's times shown in its local time zone. Times are colored by delay: green on time or early, amber up to 30 minutes late, red beyond that.
 - A route bar with the plane's position.
 - A context line that changes with each stage: where your plane is coming from, boarding, taxiing, altitude and speed, landed, bags on belt 7.
-- Dynamic Island: gate and countdown in the compact view, a progress ring in the minimal view, and the full card when expanded.
+- Dynamic Island: a status dot and the countdown on the left and the gate chip on the right when compact; a progress ring when minimal; when expanded, your seat, the route with status under each time, and the countdown with "until gate arrival". If the plane's position is only estimated, the expanded view says so.
 - Starts automatically three hours before departure, or right away from the flight screen. It lights up with a sound for gate changes, delays, boarding, takeoff, landing and the baggage belt.
+- Xcode previews of the Lock Screen card and the three island sizes cover every stage: scheduled, delayed, boarding, taxiing, cruising, descending, arrived, cancelled and diverted.
 
 **App**
 - **My Flights:** upcoming and past flights, plus all-time stats (flights, miles, hours in the air).
@@ -85,7 +87,7 @@ It tracks real flights from live positions, schedules and gates, warns you about
 - **Weather at the destination** for the time you land, from Open-Meteo.
 - **A photo of the plane** from Wikimedia Commons, the exact aircraft by tail number or else its type, with the photographer's credit. If no photo is found, nothing is shown.
 - **Connections:** the time between landing and the next take-off from the same airport, on My Flights and on the flight screen.
-- **Getting to the airport:** the drive time from Apple Maps with traffic, and when to set off. Your location is asked for only while a leave time is being worked out. If you choose, tapping *Go* also starts your Apple Music (what you were listening to, or a playlist).
+- **When to leave:** a timeline on the flight screen. Leave from where you are (with the street name), the drive time from Apple Maps with traffic, and "Up by 15m" in red when traffic has made it longer than the first estimate. Then when to arrive at the airport and at which terminal, and the time you want to have there. That time is set in Settings: 90 minutes for a domestic flight and 3 hours for an international one. A flight counts as international when the two airports are in different countries; if an airport's country isn't known, it is treated as domestic and says so. Without location access the card says so and offers to turn it on, and until then uses a set time before departure. The Lock Screen's "Leave by" line and the reminder use the same time. Your location is asked for only while a leave time is being worked out. If you choose, tapping *Go* also starts your Apple Music (what you were listening to, or a playlist).
 - **Passport:** a map of every route you have flown, shareable stats cards (all time, or one year) and every past flight.
 
 **Everywhere you are**
@@ -142,9 +144,9 @@ You need Xcode 16 or newer (free on the Mac App Store). The app runs on iOS 17+ 
 | --- | --- |
 | `Shared/FlightActivityAttributes.swift` | Data model shared by the app and the widget: flight, times, gates, phases, units |
 | `Shared/FlightPresentation.swift` | What to show at each stage: status, countdown, gate chip, context line |
-| `Shared/FlightViews.swift` | Lock Screen card, gate chip, airline badge, route bar |
+| `Shared/FlightViews.swift` | Lock Screen card, route row with status under each time, gate chip, seat tag, airline badge, route bar |
 | `Shared/FlightSamples.swift` | Sample flights for previews |
-| `Widget/FlightLiveActivity.swift` | Live Activity and Dynamic Island, with Xcode previews |
+| `Widget/FlightLiveActivity.swift` | Live Activity and Dynamic Island, with Xcode previews for every stage |
 | `App/FlightAPI.swift` | AeroDataBox, adsb.lol and adsbdb.com clients; flight search |
 | `App/FlightMath.swift` | Merges schedule and live data, detects stages, finds the inbound plane, runs the demo |
 | `App/FlightStore.swift` | My Flights storage, refresh schedule, Live Activities, background refresh |
@@ -158,10 +160,11 @@ You need Xcode 16 or newer (free on the Mac App Store). The app runs on iOS 17+ 
 | `App/BoardingPass.swift`, `BoardingPassViews.swift` | Barcode (BCBP) reading; the boarding pass screens |
 | `App/Passport.swift`, `PassportView.swift` | Totals, route map and shareable cards |
 | `App/Connections.swift`, `GettingThere.swift`, `ArrivalWeather.swift`, `AircraftPhotos.swift`, `RouteSearch.swift` | Connections, drive time, arrival weather, plane photos, airport and airline suggestions |
+| `App/WhenToLeave.swift`, `AirportCountries.swift` | The When to Leave timeline and the time at the airport; which country each airport is in |
 | `App/FlightIntents.swift`, `SpotlightIndex.swift` | Siri, Shortcuts, Action button and Spotlight |
 | `App/WidgetSync.swift`, `Shared/WidgetSnapshot.swift`, `Shared/NextFlightWidgetViews.swift`, `Widget/NextFlightWidget.swift` | The Home Screen and Lock Screen widget and the data it reads |
 
-Live position data © adsb.lol contributors, ODbL. Weather from [Open-Meteo](https://open-meteo.com). Plane photos from Wikimedia Commons, shown with their credit and licence.
+Live position data © adsb.lol contributors, ODbL. Weather from [Open-Meteo](https://open-meteo.com). Plane photos from Wikimedia Commons, shown with their credit and licence. Airport countries from [OurAirports](https://ourairports.com/data/), public domain.
 
 ## License
 

@@ -49,14 +49,20 @@ final class AppSettings {
         didSet { defaults.set(leaveForAirportMinutes, forKey: Keys.leaveForAirport) }
     }
 
-    /// Time leaving from your location: Apple Maps' drive time with traffic, so you get there `arriveAtAirportMinutes` early.
+    /// Time leaving from your location: Apple Maps' drive time with traffic, so you get there `domesticAirportMinutes`
+    /// or `internationalAirportMinutes` early.
     var leaveUsingLocation: Bool {
         didSet { defaults.set(leaveUsingLocation, forKey: Keys.leaveUsingLocation) }
     }
 
-    /// Minutes before departure to be at the airport, when leaving is timed from your location.
-    var arriveAtAirportMinutes: Int {
-        didSet { defaults.set(arriveAtAirportMinutes, forKey: Keys.arriveAtAirport) }
+    /// Minutes before departure to be at the airport for a domestic flight.
+    var domesticAirportMinutes: Int {
+        didSet { defaults.set(domesticAirportMinutes, forKey: Keys.domesticAtAirport) }
+    }
+
+    /// Minutes before departure to be at the airport for a flight that crosses a border.
+    var internationalAirportMinutes: Int {
+        didSet { defaults.set(internationalAirportMinutes, forKey: Keys.internationalAtAirport) }
     }
 
     /// What Apple Music plays when you tap Go: empty for nothing, `LeaveMusic.resume`, or a playlist id.
@@ -98,7 +104,10 @@ final class AppSettings {
         static let checkIn = "checkInReminder"
         static let leaveForAirport = "leaveForAirportMinutes"
         static let leaveUsingLocation = "leaveUsingLocation"
+        /// The one value from before there were separate domestic and international times. Read once, never written.
         static let arriveAtAirport = "arriveAtAirportMinutes"
+        static let domesticAtAirport = "domesticAirportMinutes"
+        static let internationalAtAirport = "internationalAirportMinutes"
         static let leaveMusic = "leaveMusic"
         static let autoImportCalendar = "autoImportCalendar"
         static let syncCalendar = "syncCalendar"
@@ -117,7 +126,10 @@ final class AppSettings {
         checkInReminder = defaults.object(forKey: Keys.checkIn) as? Bool ?? true
         leaveForAirportMinutes = defaults.object(forKey: Keys.leaveForAirport) as? Int ?? 120
         leaveUsingLocation = defaults.bool(forKey: Keys.leaveUsingLocation)
-        arriveAtAirportMinutes = defaults.object(forKey: Keys.arriveAtAirport) as? Int ?? 120
+        // Someone who had picked a time keeps it; otherwise 90 minutes domestic and 3 hours international.
+        let earlier = defaults.object(forKey: Keys.arriveAtAirport) as? Int
+        domesticAirportMinutes = defaults.object(forKey: Keys.domesticAtAirport) as? Int ?? earlier ?? 90
+        internationalAirportMinutes = defaults.object(forKey: Keys.internationalAtAirport) as? Int ?? max(earlier ?? 0, 180)
         leaveMusic = defaults.string(forKey: Keys.leaveMusic) ?? ""
         autoImportCalendar = defaults.bool(forKey: Keys.autoImportCalendar)
         syncCalendar = defaults.bool(forKey: Keys.syncCalendar)

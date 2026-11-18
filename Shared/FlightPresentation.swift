@@ -20,11 +20,24 @@ struct FlightPresentation {
     struct Chip: Hashable {
         var label: String
         var value: String
+
+        /// Icon beside the value on the Live Activity: walking to the gate, a bag for the belt.
+        var symbol: String {
+            switch label {
+            case "BAGGAGE", "BELT": "suitcase.fill"
+            case "SEAT": "chair.lounge.fill"
+            default: "figure.walk"
+            }
+        }
     }
 
     var statusText: String
     var tone: FlightTone
     var countdownLabel: String
+    /// Lead-in to the countdown on the Lock Screen: "Departs gate in", "Arrives at gate in".
+    var gateLabel: String
+    /// Caption under the countdown in the Dynamic Island: "until gate arrival".
+    var untilCaption: String
     /// Live countdown target. Nil shows `headline` instead.
     var countdownTarget: Date?
     var headline: String
@@ -161,6 +174,18 @@ struct FlightPresentation {
             headline = units.altitude(state.altitudeFeet)
             detail = attributes.aircraft.map { "\($0) · live from ADS-B" } ?? "Live from ADS-B"
         }
+
+        // Gate wording, only while there is a live countdown to word it around.
+        if countdownTarget != nil {
+            switch state.phase {
+            case .scheduled: (gateLabel, untilCaption) = ("Departs gate in", "until gate departure")
+            case .boarding: (gateLabel, untilCaption) = ("Boarding · departs in", "until gate departure")
+            case .landed: (gateLabel, untilCaption) = ("At the gate in", "until gate arrival")
+            default: (gateLabel, untilCaption) = ("Arrives at gate in", "until gate arrival")
+            }
+        } else {
+            (gateLabel, untilCaption) = (countdownLabel, countdownLabel.lowercased())
+        }
     }
 
     static func delayStatus(_ minutes: Int, departed: Bool) -> (String, FlightTone) {
@@ -168,6 +193,14 @@ struct FlightPresentation {
         if minutes <= 5 { return ("On time", .good) }
         let text = departed ? "\(duration(minutes)) late" : "Delayed \(duration(minutes))"
         return (text, minutes <= 30 ? .warning : .bad)
+    }
+
+    /// "On time", "10m early" or "20m late" for one end of the flight. Nil when there is no schedule to compare with.
+    static func movementStatus(_ movement: FlightActivityAttributes.Movement) -> (text: String, tone: FlightTone)? {
+        guard let delay = movement.delayMinutes else { return nil }
+        if delay <= -5 { return ("\(duration(-delay)) early", .good) }
+        if delay <= 5 { return ("On time", .good) }
+        return ("\(duration(delay)) late", delay <= 30 ? .warning : .bad)
     }
 
     /// Tone for a single time compared with its schedule.

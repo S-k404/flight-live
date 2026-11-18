@@ -624,17 +624,53 @@ final class FlightStore {
 
     // MARK: - Getting to the airport
 
+    /// How long to be at the airport: the Settings time for a domestic or an international flight.
+    func airportTime(for flight: TrackedFlight) -> AirportTime {
+        AirportTime(
+            origin: flight.attributes.origin?.code, destination: flight.attributes.destination?.code,
+            domesticMinutes: settings.domesticAirportMinutes, internationalMinutes: settings.internationalAirportMinutes
+        )
+    }
+
     /// When to set off: Apple Maps' drive time with traffic from where you are, so you're at the airport
-    /// `arriveAtAirportMinutes` before departure. Without your location, a set time before departure.
+    /// `airportTime` before departure. Without your location, a set time before departure.
     func leavePlan(for flight: TrackedFlight) -> LeavePlan? {
         guard !flight.isDemo, let departure = flight.state.departure.best else { return nil }
-        if settings.leaveUsingLocation, let travel = flight.travel {
+        // A drive time saved before location was turned off is out of date, so it isn't used.
+        if settings.leaveUsingLocation, LocationProvider.shared.isAuthorized, let travel = flight.travel {
             guard !travel.isAtAirport else { return nil }
-            let lead = TimeInterval((settings.arriveAtAirportMinutes + travel.minutes) * 60)
+            let lead = TimeInterval((airportTime(for: flight).minutes + travel.minutes) * 60)
             return LeavePlan(date: departure.addingTimeInterval(-lead), travel: travel)
         }
         guard settings.leaveForAirportMinutes > 0 else { return nil }
         return LeavePlan(date: departure.addingTimeInterval(-TimeInterval(settings.leaveForAirportMinutes * 60)), travel: nil)
+    }
+
+    /// What the flight screen's timeline shows. It's built from `leavePlan`, the same plan the Lock Screen's
+    /// "Leave by" line and the reminder use, so the three always agree.
+    func leaveTimeline(for flight: TrackedFlight) -> LeaveTimeline? {
+        guard let airport = flight.attributes.origin, let departure = flight.state.departure.best else { return nil }
+        let airportTime = airportTime(for: flight)
+        let plan = leavePlan(for: flight)
+        let drive: LeaveTimeline.Drive
+        if settings.leaveUsingLocation, LocationProvider.shared.isAuthorized {
+            if let travel = flight.travel {
+                drive = travel.isAtAirport ? .atAirport : .estimate(travel)
+            } else {
+                drive = .pending
+            }
+        } else {
+            drive = .needsLocation(denied: LocationProvider.shared.isDenied)
+        }
+        return LeaveTimeline(
+            drive: drive,
+            leaveBy: plan?.date,
+            setLeadMinutes: settings.leaveForAirportMinutes > 0 ? settings.leaveForAirportMinutes : nil,
+            arriveBy: departure.addingTimeInterval(-TimeInterval(airportTime.minutes * 60)),
+            airport: airport,
+            terminal: flight.state.departure.terminal,
+            airportTime: airportTime
+        )
     }
 
     /// Asks Apple Maps for the drive to the airport on the day of the flight: every 15 minutes in the three
@@ -657,10 +693,21 @@ final class FlightStore {
                 estimate = TravelEstimate(minutes: 0, distanceKm: straightLine, updatedAt: now)
             } else if straightLine < 300 {
                 // Ask for traffic at about the time you'd leave, not right now.
-                let lead = settings.arriveAtAirportMinutes + (flight.travel?.minutes ?? 45)
+                let lead = airportTime(for: flight).minutes + (flight.travel?.minutes ?? 45)
                 estimate = await GettingThere.driveTime(from: location, to: origin,
                                                         leavingAround: departure.addingTimeInterval(-TimeInterval(lead * 60)))
                 if estimate == nil { continue } // offline: keep the last estimate
+                if var fresh = estimate {
+                    // Compare with the first estimate for this trip, unless you're now somewhere else entirely.
+                    let before = flight.travel.flatMap { $0.isAtAirport ? nil : $0 }
+                    if let before, abs(before.distanceKm - fresh.distanceKm) <= max(2, before.distanceKm * 0.25) {
+                        fresh.firstMinutes = before.firstMinutes ?? before.minutes
+                    } else {
+                        fresh.firstMinutes = fresh.minutes
+                    }
+                    fresh.placeName = await GettingThere.placeName(for: location) ?? before?.placeName
+                    estimate = fresh
+                }
             }
             // Further away than a drive (e.g. the flight is from another city): fall back to the set time.
             guard var latest = self.flight(flight.id), latest.travel != estimate else { continue }
@@ -929,7 +976,7 @@ final class FlightStore {
             let body: String
             if let travel = plan.travel {
                 let drive = FlightPresentation.duration(travel.minutes)
-                let early = FlightPresentation.duration(settings.arriveAtAirportMinutes)
+                let early = FlightPresentation.duration(airportTime(for: flight).minutes)
                 body = "Leave by \(FlightPresentation.time(plan.date, zone)): \(drive) drive\(origin.map { " to \($0.code)" } ?? "") with traffic, "
                     + "so you're there \(early) before your \(departs) flight\(place.map { " (\($0))" } ?? "")."
             } else {

@@ -264,81 +264,51 @@ private struct AircraftFacts: View {
     }
 }
 
-/// When to leave for the airport, from Apple Maps' drive time with traffic, and a Go button.
+/// When to leave for the airport: a timeline from where you are to the time at the airport, and a Go button.
 private struct GettingThereCard: View {
     var flight: TrackedFlight
     var airport: FlightActivityAttributes.Airport
 
     @Environment(FlightStore.self) private var store
     @Environment(AppSettings.self) private var settings
-    @State private var locating = false
+    @Environment(\.openURL) private var openURL
+    /// Flips when the location prompt is answered, so the card redraws with the new permission.
+    @State private var asked = false
 
     var body: some View {
-        Card(title: "Getting to \(airport.code)") {
-            if settings.leaveUsingLocation, flight.travel?.isAtAirport == true {
-                Label("You're at the airport", systemImage: "checkmark.circle.fill")
-                    .font(.headline)
-                    .foregroundStyle(Color.flightGreen)
-            } else if let plan = store.leavePlan(for: flight) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(plan.date < .now ? "Leave now" : "Leave by \(FlightPresentation.time(plan.date, airport.timeZone))")
-                        .font(.title3.weight(.bold))
-                        .foregroundStyle(plan.date < .now ? Color.flightAmber : .white)
-                    Text(detail(plan))
-                        .font(.subheadline)
-                        .foregroundStyle(.white.opacity(0.6))
-                }
+        Card(title: "When to leave") {
+            if let timeline = store.leaveTimeline(for: flight) {
+                LeaveTimelineView(timeline: timeline, onAllowLocation: useLocation, onOpenSettings: openSettings)
+                    .id(asked)
             }
-            HStack(spacing: 10) {
-                Button {
-                    GettingThere.go(to: airport)
-                } label: {
-                    Label(settings.leaveMusic.isEmpty ? "Go" : "Go with music", systemImage: "car.fill")
-                        .font(.subheadline.weight(.semibold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 4)
-                }
-                .buttonStyle(.borderedProminent)
-                if !settings.leaveUsingLocation {
-                    Button {
-                        useLocation()
-                    } label: {
-                        HStack(spacing: 6) {
-                            if locating { ProgressView() } else { Image(systemName: "location.fill") }
-                            Text("Use my location")
-                        }
-                        .font(.subheadline.weight(.semibold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 4)
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(locating || LocationProvider.shared.isDenied)
-                }
+            Button {
+                GettingThere.go(to: airport)
+            } label: {
+                Label(settings.leaveMusic.isEmpty ? "Go" : "Go with music", systemImage: "car.fill")
+                    .font(.subheadline.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 4)
             }
+            .buttonStyle(.borderedProminent)
         }
         .task(id: flight.state.departure.best) {
             await store.updateTravelTimes()
         }
     }
 
-    /// "52 min drive with traffic · be there 2h early" or "2h before departure".
-    private func detail(_ plan: LeavePlan) -> String {
-        if let travel = plan.travel {
-            return "\(FlightPresentation.duration(travel.minutes)) drive with traffic · there \(FlightPresentation.duration(settings.arriveAtAirportMinutes)) early"
-        }
-        return "\(FlightPresentation.duration(settings.leaveForAirportMinutes)) before departure"
-    }
-
     private func useLocation() {
-        locating = true
         Task {
             if await LocationProvider.shared.requestAuthorization() {
                 settings.leaveUsingLocation = true
                 await store.updateTravelTimes(force: true)
                 store.refreshReminders()
             }
-            locating = false
+            asked.toggle()
         }
+    }
+
+    private func openSettings() {
+        if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
     }
 }
 

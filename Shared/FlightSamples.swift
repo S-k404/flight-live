@@ -27,6 +27,17 @@ extension FlightActivityAttributes.ContentState {
         departure: .init(scheduled: minutes(70), estimated: minutes(85), terminal: "2", gate: "D14"),
         arrival: .init(scheduled: minutes(390), estimated: minutes(398), terminal: "4"),
         inbound: .init(status: .inAir, flightNumber: "FL 88", fromCode: "PDX", arrival: minutes(32)),
+        seat: "2A",
+        updatedAt: .now
+    )
+
+    /// Departure 35 minutes late: red times and "35m late".
+    static let delayed = Self(
+        phase: .scheduled,
+        departure: .init(scheduled: minutes(60), estimated: minutes(95), terminal: "2", gate: "D14"),
+        arrival: .init(scheduled: minutes(380), estimated: minutes(416), terminal: "4"),
+        boardingStarts: minutes(70),
+        seat: "14C",
         updatedAt: .now
     )
 
@@ -34,6 +45,15 @@ extension FlightActivityAttributes.ContentState {
         phase: .boarding,
         departure: .init(scheduled: minutes(22), estimated: minutes(22), terminal: "2", gate: "D14"),
         arrival: .init(scheduled: minutes(342), estimated: minutes(340), terminal: "4"),
+        seat: "2A",
+        updatedAt: .now
+    )
+
+    static let taxiingOut = Self(
+        phase: .taxiingOut,
+        departure: .init(scheduled: minutes(-8), actual: minutes(-3), terminal: "2", gate: "D14"),
+        arrival: .init(scheduled: minutes(322), estimated: minutes(326), terminal: "4", gate: "B31"),
+        seat: "2A",
         updatedAt: .now
     )
 
@@ -42,6 +62,7 @@ extension FlightActivityAttributes.ContentState {
         departure: .init(scheduled: minutes(-140), actual: minutes(-128), runway: minutes(-117), gate: "D14"),
         arrival: .init(scheduled: minutes(170), estimated: minutes(176), terminal: "4", gate: "B31"),
         progress: 0.43, altitudeFeet: 37_000, groundSpeedKnots: 488, verticalRateFPM: 0, distanceRemainingNM: 1_270,
+        seat: "2A",
         updatedAt: .now
     )
 
@@ -59,6 +80,16 @@ extension FlightActivityAttributes.ContentState {
         arrival: .init(scheduled: minutes(-4), actual: minutes(-9), runway: minutes(-16), terminal: "4", gate: "B31",
                        baggageBelt: "7"),
         progress: 1, altitudeFeet: 0, groundSpeedKnots: 0,
+        updatedAt: .now
+    )
+
+    /// In the air, rerouted: the arrival is no longer where the route points.
+    static let diverted = Self(
+        phase: .diverted,
+        departure: .init(scheduled: minutes(-140), actual: minutes(-134), runway: minutes(-122), terminal: "2", gate: "D14"),
+        arrival: .init(scheduled: minutes(170), estimated: minutes(230), terminal: "4"),
+        progress: 0.5, altitudeFeet: 31_000, groundSpeedKnots: 470, verticalRateFPM: 0,
+        seat: "2A",
         updatedAt: .now
     )
 

@@ -64,6 +64,8 @@ struct AirlineBadge: View {
 struct GateChip: View {
     var chip: FlightPresentation.Chip
     var compact = false
+    /// A walking figure (or a bag for the belt) beside the value, as on the Live Activity.
+    var showsIcon = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -72,11 +74,17 @@ struct GateChip: View {
                     .font(.system(size: 8, weight: .heavy))
                     .opacity(0.65)
             }
-            Text(chip.value)
-                .font(.system(size: compact ? 13 : 22, weight: .heavy, design: .rounded))
-                .monospacedDigit()
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
+            HStack(spacing: compact ? 3 : 4) {
+                if showsIcon {
+                    Image(systemName: chip.symbol)
+                        .font(.system(size: compact ? 11 : 17, weight: .bold))
+                }
+                Text(chip.value)
+                    .font(.system(size: compact ? 13 : 22, weight: .heavy, design: .rounded))
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+            }
         }
         .foregroundStyle(.black)
         .padding(.horizontal, compact ? 6 : 10)
@@ -150,6 +158,120 @@ struct EndpointLabel: View {
                 .strikethrough()
                 .foregroundStyle(.white.opacity(0.4))
         }
+    }
+}
+
+/// One end of the route on the Live Activity: airport code and time on one line,
+/// terminal and delay status under it ("T3 · 10m early").
+struct RouteEndpoint: View {
+    var airport: FlightActivityAttributes.Airport
+    var movement: FlightActivityAttributes.Movement
+    var alignment: HorizontalAlignment
+    /// Grey the time out, e.g. for a cancelled flight.
+    var muted = false
+    /// Replaces the delay status when the whole flight has one, e.g. "Cancelled".
+    var note: String? = nil
+    var showsStatus = true
+
+    var body: some View {
+        VStack(alignment: alignment, spacing: 1) {
+            HStack(spacing: 5) {
+                if alignment == .trailing { time }
+                Text(airport.code)
+                    .font(.system(size: 17, weight: .heavy, design: .rounded))
+                    .foregroundStyle(.white)
+                if alignment != .trailing { time }
+            }
+            if let line = statusLine {
+                line
+                    .font(.system(size: 11, weight: .semibold))
+                    .monospacedDigit()
+            }
+        }
+        .lineLimit(1)
+        .minimumScaleFactor(0.7)
+    }
+
+    @ViewBuilder
+    private var time: some View {
+        if let best = movement.best {
+            Text(FlightPresentation.time(best, airport.timeZone))
+                .font(.system(size: 15, weight: .bold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(timeColor)
+        }
+    }
+
+    private var timeColor: Color {
+        let tone = FlightPresentation.tone(for: movement)
+        if muted { return .white.opacity(0.45) }
+        return tone == .neutral ? .white.opacity(0.75) : tone.color
+    }
+
+    /// Terminal and status, the status first on the right-hand side so both read toward the plane.
+    private var statusLine: Text? {
+        let terminal = movement.terminal.map { Text($0.count <= 3 ? "T\($0)" : $0).foregroundStyle(.white.opacity(0.55)) }
+        let status: Text? = {
+            if let note { return Text(note).foregroundStyle(FlightTone.bad.color) }
+            guard showsStatus, let status = FlightPresentation.movementStatus(movement) else { return nil }
+            return Text(status.text).foregroundStyle(status.tone.color)
+        }()
+        let pieces = (alignment == .trailing ? [status, terminal] : [terminal, status]).compactMap { $0 }
+        guard var line = pieces.first else { return nil }
+        for piece in pieces.dropFirst() {
+            line = line + Text(" · ").foregroundStyle(.white.opacity(0.4)) + piece
+        }
+        return line
+    }
+}
+
+/// Origin, route bar and destination for the Live Activity, with terminal and delay status under each time.
+struct LiveRouteRow: View {
+    var origin: FlightActivityAttributes.Airport
+    var destination: FlightActivityAttributes.Airport
+    var state: FlightActivityAttributes.ContentState
+    var tint: Color
+    var isStale = false
+
+    var body: some View {
+        let cancelled = state.phase == .cancelled
+        HStack(alignment: .top, spacing: 8) {
+            RouteEndpoint(
+                airport: origin, movement: state.departure, alignment: .leading,
+                muted: cancelled, note: cancelled ? "Cancelled" : nil
+            )
+            .layoutPriority(1)
+            RouteProgressBar(
+                progress: state.planeProgress,
+                tint: tint,
+                interval: state.flightInterval,
+                showsPlane: !isStale
+            )
+            .frame(minWidth: 36)
+            .padding(.top, 2)
+            RouteEndpoint(
+                airport: destination, movement: state.arrival, alignment: .trailing,
+                muted: cancelled, note: state.phase == .diverted ? "Diverted" : nil, showsStatus: !cancelled
+            )
+            .layoutPriority(1)
+        }
+    }
+}
+
+/// Seat icon and number, from the boarding pass or entered by hand.
+struct SeatTag: View {
+    var seat: String
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "chair.lounge.fill")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.55))
+            Text(seat)
+                .font(.system(size: 14, weight: .bold, design: .rounded))
+                .foregroundStyle(.white)
+        }
+        .lineLimit(1)
     }
 }
 
@@ -318,7 +440,7 @@ struct FlightLockScreenView: View {
         let presentation = FlightPresentation(attributes: attributes, state: state)
         let units = state.units ?? .aviation
 
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 7) {
                 AirlineBadge(code: attributes.airlineCode, size: 20)
                 Text(attributes.flightNumber)
@@ -331,42 +453,16 @@ struct FlightLockScreenView: View {
                         .lineLimit(1)
                 }
                 Spacer(minLength: 6)
-                Text(presentation.statusText)
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(presentation.tone.color)
-                    .lineLimit(1)
-                    .contentTransition(.numericText())
-            }
-
-            HStack(alignment: .center) {
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(presentation.countdownLabel.uppercased())
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(.white.opacity(0.5))
-                        .contentTransition(.opacity)
-                    CountdownValue(presentation: presentation, size: 30)
-                        .foregroundStyle(.white)
-                }
-                Spacer(minLength: 8)
-                if let chip = presentation.chip {
-                    GateChip(chip: chip)
-                        .id(chip)
-                        .transition(.push(from: .bottom))
+                if let seat = state.seat {
+                    SeatTag(seat: seat)
                 }
             }
 
             if let origin = attributes.origin, let destination = attributes.destination {
-                let muted = state.phase == .cancelled
-                HStack(spacing: 10) {
-                    EndpointLabel(airport: origin, movement: state.departure, alignment: .leading, muted: muted)
-                    RouteProgressBar(
-                        progress: state.planeProgress,
-                        tint: presentation.tone.color,
-                        interval: state.flightInterval,
-                        showsPlane: !isStale
-                    )
-                    EndpointLabel(airport: destination, movement: state.arrival, alignment: .trailing, muted: muted)
-                }
+                LiveRouteRow(
+                    origin: origin, destination: destination, state: state,
+                    tint: presentation.tone.color, isStale: isStale
+                )
             } else {
                 HStack {
                     MiniStat(label: "SPEED", value: units.speed(state.groundSpeedKnots))
@@ -375,20 +471,50 @@ struct FlightLockScreenView: View {
                 }
             }
 
-            Group {
-                if isStale {
-                    Text("Last update \(state.updatedAt, style: .relative) ago")
-                } else {
-                    Text(presentation.detail)
-                        .id(presentation.detail)
+            Rectangle()
+                .fill(.white.opacity(0.12))
+                .frame(height: 1)
+
+            HStack(alignment: .center, spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    headline(presentation)
+                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                    Group {
+                        if isStale {
+                            Text("Last update \(state.updatedAt, style: .relative) ago")
+                        } else {
+                            Text(presentation.detail)
+                                .id(presentation.detail)
+                                .transition(.push(from: .bottom))
+                        }
+                    }
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.6))
+                    // The chip takes a third of the width: let a long line wrap rather than cut it off.
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 8)
+                if let chip = presentation.chip {
+                    GateChip(chip: chip, showsIcon: true)
+                        .id(chip)
                         .transition(.push(from: .bottom))
                 }
             }
-            .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(.white.opacity(0.6))
-            .lineLimit(1)
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 13)
+        .padding(.vertical, 11)
+    }
+
+    /// "Departs gate in 45:00" with the countdown in the status color, or the label and a fixed headline.
+    private func headline(_ presentation: FlightPresentation) -> Text {
+        let label = Text("\(presentation.gateLabel) ").foregroundStyle(.white)
+        if let target = presentation.countdownTarget, target > .now {
+            return label + Text(timerInterval: Date.now...target, countsDown: true).foregroundStyle(presentation.tone.color)
+        }
+        return label + Text(presentation.headline).foregroundStyle(presentation.tone.color)
     }
 }
