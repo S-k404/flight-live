@@ -905,6 +905,37 @@ enum AircraftTypes {
         "P28A": "Piper PA-28", "PA46": "Piper Malibu", "SR20": "Cirrus SR20", "SR22": "Cirrus SR22", "SF50": "Cirrus Vision Jet",
         "DA40": "Diamond DA40", "DA42": "Diamond DA42", "PC12": "Pilatus PC-12", "TBM9": "Daher TBM 900",
         "BE36": "Beechcraft Bonanza", "BE20": "Beechcraft King Air 200", "C25A": "Cessna Citation CJ2", "GLF6": "Gulfstream G650",
+        // Older and rarer airliners.
+        "A306": "Airbus A300-600", "A30B": "Airbus A300", "A310": "Airbus A310", "A342": "Airbus A340-200", "A345": "Airbus A340-500",
+        "A3ST": "Airbus Beluga", "A337": "Airbus BelugaXL", "A124": "Antonov An-124 Ruslan", "A225": "Antonov An-225 Mriya",
+        "B701": "Boeing 707", "B703": "Boeing 707", "B722": "Boeing 727", "B732": "Boeing 737-200", "B733": "Boeing 737-300",
+        "B734": "Boeing 737-400", "B735": "Boeing 737-500", "B741": "Boeing 747-100", "B742": "Boeing 747-200", "B743": "Boeing 747-300",
+        "B74S": "Boeing 747SP", "B773": "Boeing 777-300", "BLCF": "Boeing 747 Dreamlifter",
+        "MD11": "McDonnell Douglas MD-11", "MD81": "McDonnell Douglas MD-80", "MD82": "McDonnell Douglas MD-80",
+        "MD83": "McDonnell Douglas MD-80", "MD87": "McDonnell Douglas MD-80", "MD88": "McDonnell Douglas MD-80",
+        "MD90": "McDonnell Douglas MD-90", "DC10": "McDonnell Douglas DC-10", "DC9": "McDonnell Douglas DC-9", "L101": "Lockheed L-1011 TriStar",
+        "IL96": "Ilyushin Il-96", "IL76": "Ilyushin Il-76", "T154": "Tupolev Tu-154", "T204": "Tupolev Tu-204",
+        "SU95": "Sukhoi Superjet 100", "C919": "COMAC C919", "AJ27": "COMAC ARJ21",
+        // Regional aircraft and turboprops.
+        "E135": "Embraer ERJ 135", "E145": "Embraer ERJ 145", "E120": "Embraer EMB 120 Brasilia", "CRJ1": "Bombardier CRJ100",
+        "B461": "BAe 146", "B462": "BAe 146", "B463": "BAe 146", "RJ85": "Avro RJ85", "RJ1H": "Avro RJ100",
+        "F50": "Fokker 50", "F70": "Fokker 70", "F100": "Fokker 100", "SF34": "Saab 340", "SB20": "Saab 2000",
+        "DH8A": "De Havilland Dash 8-100", "DH8B": "De Havilland Dash 8-200", "DH8C": "De Havilland Dash 8-300",
+        "AT43": "ATR 42", "AT45": "ATR 42-500", "AT46": "ATR 42-600", "DHC6": "De Havilland Canada DHC-6 Twin Otter",
+        "B190": "Beechcraft 1900", "JS41": "British Aerospace Jetstream 41", "D328": "Dornier 328", "AN24": "Antonov An-24",
+        "AN26": "Antonov An-26", "AN32": "Antonov An-32", "YK42": "Yakovlev Yak-42", "C130": "Lockheed C-130 Hercules",
+        // Business jets and smaller planes.
+        "C25B": "Cessna Citation CJ3", "C25C": "Cessna Citation CJ4", "C510": "Cessna Citation Mustang", "C525": "Cessna CitationJet",
+        "C550": "Cessna Citation II", "C56X": "Cessna Citation Excel", "C680": "Cessna Citation Sovereign", "C700": "Cessna Citation Longitude",
+        "C750": "Cessna Citation X", "GLF4": "Gulfstream IV", "GLF5": "Gulfstream V", "GLEX": "Bombardier Global Express",
+        "GL5T": "Bombardier Global 5000", "GL7T": "Bombardier Global 7500", "CL60": "Bombardier Challenger 600",
+        "CL35": "Bombardier Challenger 350", "FA7X": "Dassault Falcon 7X", "F900": "Dassault Falcon 900", "F2TH": "Dassault Falcon 2000",
+        "LJ45": "Learjet 45", "LJ60": "Learjet 60", "E55P": "Embraer Phenom 300", "E50P": "Embraer Phenom 100", "PC24": "Pilatus PC-24",
+        "H25B": "Hawker 800", "P180": "Piaggio P.180 Avanti", "C206": "Cessna 206", "C210": "Cessna 210", "PA34": "Piper PA-34 Seneca",
+        "PA44": "Piper PA-44 Seminole", "DA20": "Diamond DA20", "DA62": "Diamond DA62",
+        // Helicopters.
+        "R22": "Robinson R22", "R44": "Robinson R44", "R66": "Robinson R66", "EC35": "Eurocopter EC135", "EC45": "Eurocopter EC145",
+        "A139": "AgustaWestland AW139", "B407": "Bell 407", "B412": "Bell 412", "S76": "Sikorsky S-76", "H60": "Sikorsky UH-60 Black Hawk",
     ]
 
     static func name(for code: String) -> String {

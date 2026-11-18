@@ -163,6 +163,18 @@ enum AircraftPhotos {
         for file in (matching.filter(\.isLandscape) + matching.filter { !$0.isLandscape }).prefix(3) {
             if let file = try await usable(file) { return file.photo(isThisAircraft: true) }
         }
+        return try await categoryPhoto(registration: registration)
+    }
+
+    /// Photos in the plane's own Commons category ("Category:VT-IUK (aircraft)"), which often holds photos whose file
+    /// names don't carry the tail number, so the search by name above can't find them.
+    private static func categoryPhoto(registration: String) async throws -> AircraftPhoto? {
+        let files = try await commons([
+            "generator": "categorymembers", "gcmtitle": "Category:\(registration) (aircraft)", "gcmtype": "file", "gcmlimit": "10",
+        ]).filter(\.isPicture)
+        for file in (files.filter(\.isLandscape) + files.filter { !$0.isLandscape }).prefix(3) {
+            if let file = try await usable(file) { return file.photo(isThisAircraft: true) }
+        }
         return nil
     }
 
@@ -172,13 +184,42 @@ enum AircraftPhotos {
         if let base = titles[0].split(separator: "-").first, base.count < titles[0].count {
             titles.append(String(base)) // "ATR 72-600" → "ATR 72"
         }
-        for title in titles {
-            if let file = try await leadImage(article: title), let page = try await commons(["titles": "File:\(file)"]).first,
-               let page = try await usable(page) {
-                return page.photo(isThisAircraft: false)
-            }
+        // "Daher TBM 900" → "Daher TBM": drop trailing words, down to two.
+        var words = titles[0].split(separator: " ")
+        while words.count > 2 {
+            words.removeLast()
+            titles.append(words.joined(separator: " "))
         }
-        return nil
+        // The flight screen drops "Airbus " from the name, which "Beluga" and "Helicopters H145" then lack.
+        if !model.hasPrefix("Airbus") { titles.append("Airbus " + model) }
+        var seen = Set<String>()
+        titles = titles.filter { seen.insert($0).inserted }
+        for title in titles {
+            if let photo = try await typePhoto(leadImage: leadImage(article: title)) { return photo }
+        }
+        // No article has that exact title (an unusual spelling, or a variant): let Wikipedia search for the closest one.
+        return try await typePhoto(leadImage: searchedLeadImage(model: model))
+    }
+
+    private static func typePhoto(leadImage file: String?) async throws -> AircraftPhoto? {
+        guard let file, let page = try await commons(["titles": "File:\(file)"]).first, let usable = try await usable(page) else { return nil }
+        return usable.photo(isThisAircraft: false)
+    }
+
+    /// The lead image of the article Wikipedia's search ranks first for the type, as long as it is about the same
+    /// family ("737" in the title for a "Boeing 737-8AS"), so a search can't wander off to some other plane.
+    private static func searchedLeadImage(model: String) async throws -> String? {
+        guard let range = model.range(of: #"[A-Za-z]*\d+[A-Za-z]*"#, options: .regularExpression) else { return nil }
+        let family = model[range].lowercased()
+        let json = try await get("https://en.wikipedia.org/w/api.php", [
+            "action": "query", "generator": "search", "gsrsearch": "\(model) aircraft", "gsrnamespace": "0", "gsrlimit": "5",
+            "prop": "pageimages", "piprop": "name", "format": "json", "formatversion": "2",
+        ])
+        let pages = ((json["query"] as? [String: Any])?["pages"] as? [[String: Any]] ?? [])
+            .sorted { ($0["index"] as? Int ?? 0) < ($1["index"] as? Int ?? 0) }
+        return pages.first { page in
+            page["pageimage"] is String && (page["title"] as? String ?? "").lowercased().contains(family)
+        }?["pageimage"] as? String
     }
 
     private static func leadImage(article: String) async throws -> String? {
@@ -202,6 +243,10 @@ enum AircraftPhotos {
         var thumbWidth: Int
         /// The Commons categories it's in. Empty when the answer didn't say.
         var categories: [String] = []
+        var mime = ""
+
+        /// A photo rather than a video, document or drawing.
+        var isPicture: Bool { mime.isEmpty || (mime.hasPrefix("image/") && !mime.contains("svg")) }
 
         /// In an aircraft or airline category, so a tail number that turns up in some other file's name doesn't count.
         /// Files whose categories weren't returned are given the benefit of the doubt.
@@ -238,7 +283,7 @@ enum AircraftPhotos {
         var parameters = query
         parameters.merge([
             "action": "query", "prop": "imageinfo|categories", "clshow": "!hidden", "cllimit": "30",
-            "iiprop": "url|extmetadata|size", "iiurlwidth": String(width),
+            "iiprop": "url|extmetadata|size|mime", "iiurlwidth": String(width),
             "iiextmetadatafilter": "Artist|LicenseShortName", "format": "json", "formatversion": "2",
         ]) { mine, _ in mine }
         let json = try await get("https://commons.wikimedia.org/w/api.php", parameters)
@@ -258,7 +303,8 @@ enum AircraftPhotos {
                 width: info["width"] as? Int ?? 0,
                 height: info["height"] as? Int ?? 0,
                 thumbWidth: info["thumbwidth"] as? Int ?? 0,
-                categories: (page["categories"] as? [[String: Any]])?.compactMap { $0["title"] as? String } ?? []
+                categories: (page["categories"] as? [[String: Any]])?.compactMap { $0["title"] as? String } ?? [],
+                mime: info["mime"] as? String ?? ""
             )
         }
     }
@@ -407,7 +453,8 @@ struct PhotoCredit: View {
     var color: Color = .white.opacity(0.5)
 
     var body: some View {
-        let lead = photo.isThisAircraft ? thisAircraftLabel : (model.map { "Another \($0)" } ?? "Same type")
+        // A type's photo is its Wikipedia article's lead picture, which can be a sister model (a 777-200 for a 777-300ER).
+        let lead = photo.isThisAircraft ? thisAircraftLabel : (model.map { "Similar to \($0)" } ?? "Similar plane")
         let text = Text("\(lead) · Photo: \(photo.credit)")
             .font(.caption2)
             .foregroundStyle(color)
