@@ -209,9 +209,8 @@ struct PassportView: View {
     /// One of your own planes of that type if someone has photographed it, else the type from Wikipedia.
     private func loadPhoto(model: String) async {
         let registration = shown.first { $0.aircraftModel == model && $0.registration != nil }?.registration
-        guard let photo = await AircraftPhotos.photo(registration: registration, model: model),
-              let image = await AircraftPhotos.image(for: photo) else { return }
-        aircraftPhoto = LoadedPhoto(photo: photo, image: image)
+        guard let loaded = await AircraftPhotos.loaded(registration: registration, model: model) else { return }
+        aircraftPhoto = LoadedPhoto(photo: loaded.photo, image: loaded.image)
     }
 
     private func fillInPlanes() {
@@ -584,6 +583,25 @@ private struct FavoritesCard: View {
 enum HistorySort: String, CaseIterable, Identifiable {
     case date = "Date", from = "From", to = "To", airline = "Airline", aircraft = "Aircraft", distance = "Distance"
     var id: Self { self }
+
+    /// The flights in this order. Flights that tie fall back to the date, so equal ones don't shuffle.
+    func ordered(_ flights: [TrackedFlight], soonestFirst: Bool = false) -> [TrackedFlight] {
+        let earlier = { (a: TrackedFlight, b: TrackedFlight) in soonestFirst ? a.sortDate < b.sortDate : a.sortDate > b.sortDate }
+        func by<Key: Comparable>(largestFirst: Bool = false, _ key: @escaping (TrackedFlight) -> Key) -> [TrackedFlight] {
+            flights.sorted { a, b in
+                let (x, y) = (key(a), key(b))
+                return x == y ? earlier(a, b) : (largestFirst ? x > y : x < y)
+            }
+        }
+        switch self {
+        case .date: return flights.sorted(by: earlier)
+        case .from: return by { ($0.attributes.origin?.city ?? "~").lowercased() }
+        case .to: return by { ($0.attributes.destination?.city ?? "~").lowercased() }
+        case .airline: return by { ($0.attributes.airline ?? "~" + $0.attributes.flightNumber).lowercased() } // unnamed last
+        case .aircraft: return by { ($0.aircraftModel ?? "~").lowercased() } // unknown planes last
+        case .distance: return by(largestFirst: true) { $0.distanceKm ?? 0 }
+        }
+    }
 }
 
 private struct HistorySection: View {
@@ -593,15 +611,7 @@ private struct HistorySection: View {
     @State private var editingFlight: TrackedFlight?
 
     private var sorted: [TrackedFlight] {
-        let byDate = flights.sorted { $0.sortDate > $1.sortDate }
-        switch sort {
-        case .date: return byDate
-        case .from: return byDate.sorted { ($0.attributes.origin?.city ?? "") < ($1.attributes.origin?.city ?? "") }
-        case .to: return byDate.sorted { ($0.attributes.destination?.city ?? "") < ($1.attributes.destination?.city ?? "") }
-        case .airline: return byDate.sorted { $0.attributes.flightNumber < $1.attributes.flightNumber }
-        case .aircraft: return byDate.sorted { ($0.aircraftModel ?? "~") < ($1.aircraftModel ?? "~") }
-        case .distance: return byDate.sorted { ($0.distanceKm ?? 0) > ($1.distanceKm ?? 0) }
-        }
+        sort.ordered(flights)
     }
 
     /// By year when sorted by date; one group otherwise.

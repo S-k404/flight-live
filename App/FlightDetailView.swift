@@ -135,21 +135,11 @@ struct FlightDetailView: View {
 
                 if !flight.isDemo || attributes.aircraft != nil {
                     Card(title: "Aircraft") {
-                        AircraftPhotoView(registration: flight.registration, model: flight.aircraftModel)
-                        VStack(alignment: .leading, spacing: 4) {
-                            if let aircraft = attributes.aircraft {
-                                Text(aircraft)
-                                    .font(.headline)
-                            } else {
-                                Text("The airline hasn't said which plane yet")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                            }
-                            if let hex = flight.hex {
-                                Text("Transponder \(hex.uppercased())")
-                                    .font(.footnote)
-                                    .foregroundStyle(.secondary)
-                            }
+                        AircraftPhotoView(aircraft: attributes.aircraft, registration: flight.registration,
+                                          model: flight.aircraftModel, isPast: flight.isFlown)
+                        let facts = AircraftFacts.items(for: flight, among: store.flights)
+                        if !facts.isEmpty {
+                            AircraftFacts(items: facts)
                         }
                     }
                 }
@@ -245,6 +235,32 @@ private struct Card<Content: View>: View {
         .padding(16)
         .foregroundStyle(.white)
         .background(Color.flightCard, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+    }
+}
+
+/// The plane's tail number, how often you've been on it, and its transponder.
+private struct AircraftFacts: View {
+    var items: [(label: String, value: String)]
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 24) {
+            ForEach(items, id: \.label) { item in
+                MiniStat(label: item.label, value: item.value)
+            }
+        }
+    }
+
+    static func items(for flight: TrackedFlight, among flights: [TrackedFlight]) -> [(label: String, value: String)] {
+        var items: [(label: String, value: String)] = []
+        if let tail = flight.registration {
+            items.append(("TAIL NUMBER", tail))
+            let before = flights.filter { $0.id != flight.id && $0.isFlown && $0.registration == tail }.count
+            items.append(("YOUR HISTORY", before == 0 ? "First time" : "Flown \(before) time\(before == 1 ? "" : "s") before"))
+        }
+        if let hex = flight.hex {
+            items.append(("TRANSPONDER", hex.uppercased()))
+        }
+        return items
     }
 }
 

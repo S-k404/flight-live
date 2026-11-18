@@ -9,8 +9,10 @@ struct FlightsListView: View {
     @State private var showingSettings = false
     @State private var passToShow: BoardingPassRoute?
     @State private var showingPassport = false
+    @State private var showingDelays = false
     @State private var sharedMessage: String?
     @State private var editingFlight: TrackedFlight?
+    @AppStorage("flightListSort") private var sort: HistorySort = .date
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -32,9 +34,10 @@ struct FlightsListView: View {
                     if !store.upcoming.isEmpty {
                         SectionTitle(text: "Upcoming")
                             .cardRow()
-                        ForEach(store.upcoming) { flight in
+                        ForEach(sort.ordered(store.upcoming, soonestFirst: true)) { flight in
                             flightRow(flight)
-                            if let connection = store.connection(after: flight) {
+                            // A connection sits between two flights in time, so only show it in that order.
+                            if sort == .date, let connection = store.connection(after: flight) {
                                 ConnectionRow(connection: connection)
                                     .cardRow()
                             }
@@ -53,7 +56,7 @@ struct FlightsListView: View {
                         }
                         .cardRow()
                         // The rest live in the Passport, so the list stays about what's coming up.
-                        ForEach(past.prefix(3)) { flight in
+                        ForEach(sort.ordered(Array(past.prefix(3)))) { flight in
                             flightRow(flight)
                         }
                     }
@@ -79,7 +82,23 @@ struct FlightsListView: View {
                         Image(systemName: "gearshape")
                     }
                 }
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    if !store.flights.isEmpty {
+                        Menu {
+                            Picker("Sort by", selection: $sort) {
+                                ForEach(HistorySort.allCases) { option in
+                                    Text(option.rawValue).tag(option)
+                                }
+                            }
+                        } label: {
+                            Image(systemName: "arrow.up.arrow.down")
+                        }
+                        Button {
+                            showingDelays = true
+                        } label: {
+                            Image(systemName: "exclamationmark.triangle")
+                        }
+                    }
                     Button {
                         addFlight = AddFlightRoute()
                     } label: {
@@ -102,6 +121,9 @@ struct FlightsListView: View {
             }
             .sheet(isPresented: $showingPassport) {
                 PassportView()
+            }
+            .sheet(isPresented: $showingDelays) {
+                DelaysView { id in path = [id] }
             }
             .sheet(item: $editingFlight) { flight in
                 EditFlightDetailsView(flight: flight)
