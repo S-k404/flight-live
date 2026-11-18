@@ -179,7 +179,7 @@ MIT. See [LICENSE](LICENSE).
 ---
 
 <p align="center">
-  <a href="https://github.com/S-k404/grab">&larr; U9 grab</a> &middot;
+  <a href="https://github.com/S-k404/aether-7">&larr; U10 aether-7</a> &middot;
   <a href="https://github.com/S-k404/S-k404">SK-404 index</a> &middot;
   <a href="https://github.com/S-k404/study-copilot">U12 study-copilot &rarr;</a>
 </p>
